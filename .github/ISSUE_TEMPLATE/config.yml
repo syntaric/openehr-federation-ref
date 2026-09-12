@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question about the specification itself
+    url: https://github.com/syntaric/openehr-federation-spec
+    about: >-
+      If your question is about what the specification REQUIRES — rather than
+      what this implementation does — it belongs in the specification
+      repository. Ambiguities found there are valuable and should be raised
+      where they can actually be resolved.
+  - name: Security vulnerability or clinical-data incident
+    url: https://github.com/syntaric/openehr-federation-ref/security/advisories/new
+    about: >-
+      Report privately, never as a public issue. Do not attach logs, AQL or
+      response bodies from a live system.

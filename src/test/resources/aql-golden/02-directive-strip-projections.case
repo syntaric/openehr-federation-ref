@@ -1,0 +1,8 @@
+== facade
+SELECT p/id AS endpoint_id, p/system_id AS system_id, c/uid/value AS composition_id FROM ENDPOINT p [ "node_1", "node_2" ] CONTAINS EHR e CONTAINS COMPOSITION c WHERE e/ehr_status/subject/external_ref/id/value = '12345'
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== endpoints
+node_1,node_2
+== expected
+SELECT c/uid/value AS composition_id FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000'

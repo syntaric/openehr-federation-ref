@@ -1,0 +1,6 @@
+== facade
+SELECT DISTINCT o/data[at0001]/events[at0006]/data[at0003]/items[at0004]/value/magnitude AS sys FROM EHR e CONTAINS OBSERVATION o [openEHR-EHR-OBSERVATION.blood_pressure.v2] WHERE e/ehr_status/subject/external_ref/id/value = '12345' AND o/data[at0001]/events[at0006]/data[at0003]/items[at0004]/value/magnitude > 140
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== expected
+SELECT DISTINCT o/data[at0001]/events[at0006]/data[at0003]/items[at0004]/value/magnitude AS sys FROM EHR e CONTAINS OBSERVATION o[openEHR-EHR-OBSERVATION.blood_pressure.v2] WHERE (e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000' AND o/data[at0001]/events[at0006]/data[at0003]/items[at0004]/value/magnitude > 140)

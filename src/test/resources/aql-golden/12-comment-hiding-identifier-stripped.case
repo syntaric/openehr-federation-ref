@@ -1,0 +1,7 @@
+== facade
+SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c -- patient 12345
+WHERE e/ehr_status/subject/external_ref/id/value = '12345'
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== expected
+SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000'

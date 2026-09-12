@@ -1,0 +1,62 @@
+name: Bug report
+description: Something behaves differently from what you expected
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Before you paste anything**: this gateway sits in front of clinical
+        record repositories. Do not include real patient identifiers, `ehr_id`
+        values, AQL from a live system, or response bodies. Redact or
+        synthesise them — a suspected data-exposure problem should be
+        [reported privately](../security/advisories/new) instead.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: >-
+        The smallest sequence you can manage. The compose demo stack is a good
+        starting point if the problem shows up there.
+      placeholder: |
+        1. docker compose up -d
+        2. curl -s -X POST http://localhost:8080/v1/query/aql ...
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      placeholder: "0.3.0, or a commit SHA"
+    validations:
+      required: true
+
+  - type: textarea
+    id: spec
+    attributes:
+      label: Relevant specification reference
+      description: >-
+        Optional but very helpful. Which § number, N-number or CP-number does
+        this bear on? If you believe the implementation contradicts the
+        specification, quoting the line makes the report actionable
+        immediately.
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Java version, database, member CDR products and versions.
+      placeholder: |
+        Java: 21
+        Postgres: 16
+        Member nodes: EHRbase 2.35.1, FerroEHR 0.4

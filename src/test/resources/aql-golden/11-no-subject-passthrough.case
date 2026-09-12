@@ -1,0 +1,6 @@
+== facade
+SELECT c/uid/value AS composition_id FROM EHR e CONTAINS COMPOSITION c WHERE c/archetype_node_id = 'openEHR-EHR-COMPOSITION.encounter.v1'
+== ehr_id
+NONE
+== expected
+SELECT c/uid/value AS composition_id FROM EHR e CONTAINS COMPOSITION c WHERE c/archetype_node_id = 'openEHR-EHR-COMPOSITION.encounter.v1'

@@ -1,0 +1,32 @@
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: "/"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Spring Boot's modules move together; separate PRs per module produce a
+      # set that only builds once all of them have landed.
+      spring-boot:
+        patterns:
+          - "org.springframework.boot:*"
+          - "org.springframework:*"
+      test-tooling:
+        patterns:
+          - "org.testcontainers:*"
+          - "org.junit*:*"
+          - "org.assertj:*"
+          - "org.mockito:*"
+          - "com.tngtech.archunit:*"
+          - "org.wiremock:*"
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly

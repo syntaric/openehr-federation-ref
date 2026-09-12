@@ -1,0 +1,6 @@
+== facade
+SELECT c/uid/value AS composition_id, c/context/start_time/value AS start_time FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_status/subject/external_ref/id/value = '12345' AND c/archetype_node_id = 'openEHR-EHR-COMPOSITION.encounter.v1'
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== expected
+SELECT c/uid/value AS composition_id, c/context/start_time/value AS start_time FROM EHR e CONTAINS COMPOSITION c WHERE (e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000' AND c/archetype_node_id = 'openEHR-EHR-COMPOSITION.encounter.v1')

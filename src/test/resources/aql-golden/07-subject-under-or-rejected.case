@@ -1,0 +1,6 @@
+== facade
+SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_status/subject/external_ref/id/value = '12345' OR c/name/value = 'x'
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== expected
+ERROR:FED_IDENTIFIER_UNSTRIPPABLE

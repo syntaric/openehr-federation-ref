@@ -1,0 +1,180 @@
+# Federation demo stack: the gateway, its Postgres, and two member CDR nodes it
+# federates to — EHRbase and FerroEHR — each with its own database. A one-shot
+# seed service creates the demo EHRs and loads a composition per patient per
+# node, so the demo patients resolve on BOTH nodes and a federated query returns
+# merged rows (see src/main/resources/application-docker.yml).
+#
+#   docker compose up --build
+#
+# The registry is applied at startup from docker/demo-registry.json — there is
+# no registry write API, and no seeding service to race with.
+#
+# NOTE: this gateway performs NO inbound authentication — here or anywhere. It
+# is a reference implementation of the federation tier, not an access control
+# product, so anything that can reach its port can query the federation. Put it
+# behind whatever your own policy requires.
+#
+#   # federated AQL across both nodes:
+#   curl -s -X POST http://localhost:8080/v1/query/aql \
+#     -H 'Content-Type: application/json' \
+#     -d '{"q":"SELECT e/ehr_id/value AS ehr_id FROM EHR e WHERE e/ehr_status/subject/external_ref/id/value = '\''12345'\''"}'
+#
+#   # federation self-description:
+#   curl -s -X OPTIONS http://localhost:8080/
+#
+# Requires Docker Compose 2.23.1+ (inline `configs:` content).
+
+services:
+  # ---- federation gateway ---------------------------------------------------
+  federation:
+    build: .
+    depends_on:
+      federation-db:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # The registry is applied from this document at startup. There is no
+      # registry write API, so this is how a gateway is handed a federation —
+      # and it is idempotent, so restarting is always safe.
+      FEDERATION_REGISTRY_BOOTSTRAP_FILE: file:/app/demo-registry.json
+      # Encrypts per-source outbound credentials. DEMO VALUE — a real deployment
+      # supplies its own and backs it up, because losing it means re-entering
+      # every credential in the registry by hand. The demo nodes run with auth
+      # disabled, so nothing here actually needs it; it is set so that trying the
+      # oauth2-jwt / oauth2-secret profiles works out of the box.
+      FEDERATION_REGISTRY_SECRET_KEY: ${FEDERATION_REGISTRY_SECRET_KEY:-ZGVtby1vbmx5LWZlZGVyYXRpb24ta2V5LTMyYnl0ZXMh}
+    volumes:
+      - ./docker/demo-registry.json:/app/demo-registry.json:ro
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
+  federation-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: federation
+      POSTGRES_USER: federation
+      POSTGRES_PASSWORD: federation
+    volumes:
+      - federation-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U federation -d federation"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---- member node 1: EHRbase ----------------------------------------------
+  #
+  # If you add health probing to a fork, note that EHRbase 2.35 does NOT
+  # implement OPTIONS on its openEHR API root — the call is OPTIONAL in the REST
+  # specification and EHRbase serves reachability on its Actuator path
+  # (http://ehrbase:8080/ehrbase/rest/status) instead. A probe that assumes
+  # OPTIONS reports this node as unreachable while it is serving queries
+  # perfectly well, which is an easy hour to lose.
+  ehrbase:
+    image: ehrbase/ehrbase:2.35.1
+    depends_on:
+      ehrbase-db:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:postgresql://ehrbase-db:5432/ehrbase
+      DB_USER_ADMIN: ehrbase
+      DB_PASS_ADMIN: ehrbase
+      DB_USER: ehrbase_restricted
+      DB_PASS: ehrbase_restricted
+      SECURITY_AUTHTYPE: NONE
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+
+  ehrbase-db:
+    image: ehrbase/ehrbase-v2-postgres:16.2
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      EHRBASE_USER_ADMIN: ehrbase
+      EHRBASE_PASSWORD_ADMIN: ehrbase
+      EHRBASE_USER: ehrbase_restricted
+      EHRBASE_PASSWORD: ehrbase_restricted
+    volumes:
+      - ehrbase-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---- member node 2: FerroEHR ---------------------------------------------
+  ferroehr:
+    image: ghcr.io/rubentalstra/ferroehr:4.1.1
+    depends_on:
+      ferroehr-db:
+        condition: service_healthy
+    environment:
+      FERROEHR__DB__URL: postgres://ferroehr:ferroehr@ferroehr-db:5432/ferroehr
+      FERROEHR__LOG__FORMAT: pretty
+      FERROEHR__LOG__FILTER: info
+    configs:
+      - source: ferroehr-config
+        target: /etc/ferroehr/ferroehr.toml
+    ports:
+      - "8082:8080"
+    restart: unless-stopped
+
+  ferroehr-db:
+    image: ghcr.io/rubentalstra/ferroehr-postgres:4.1.1
+    environment:
+      POSTGRES_PASSWORD: postgres
+      PG_INIT_USER: ferroehr
+      PG_INIT_PASSWORD: ferroehr
+      PG_INIT_DB: ferroehr
+    volumes:
+      - ferroehr-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ferroehr -d ferroehr"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  # ---- one-shot demo seed ---------------------------------------------------
+  # Three phases: the demo EHRs, then the IPS template and one composition per
+  # patient per node, then ~500 federated AQL queries over ~60s so the operator
+  # console comes up with real traffic in it rather than empty charts. The load
+  # phase talks to the gateway, hence the dependency on `federation`.
+  seed-demo:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      - ehrbase
+      - ferroehr
+      - federation
+    entrypoint: ["/bin/sh", "/seed-demo.sh"]
+    volumes:
+      - ./docker/seed-demo.sh:/seed-demo.sh:ro
+      - ./docker/demo-data:/demo-data:ro
+    restart: "no"
+
+configs:
+  # Demo-only FerroEHR config: auth off so the gateway's passthrough profile
+  # works without node credentials. Never use this in a real deployment.
+  ferroehr-config:
+    content: |
+      [server]
+      bind = "0.0.0.0:8080"
+      cors_permissive = true
+
+      [auth]
+      enabled = false
+
+      [authz.rbac]
+      enabled = false
+
+volumes:
+  federation-pgdata:
+  ehrbase-pgdata:
+  ferroehr-pgdata:

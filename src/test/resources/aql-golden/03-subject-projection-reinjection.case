@@ -1,0 +1,6 @@
+== facade
+SELECT e/ehr_status/subject/external_ref/id/value AS patient_id, c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_status/subject/external_ref/id/value = '999' ORDER BY c/context/start_time/value DESC LIMIT 10
+== ehr_id
+550e8400-e29b-41d4-a716-446655440000
+== expected
+SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000' ORDER BY c/context/start_time/value DESC LIMIT 10

@@ -1,0 +1,40 @@
+{
+  "organisations": [
+    { "id": "demo-hospital", "name": "Demo Hospital (EHRbase)" },
+    { "id": "demo-clinic", "name": "Demo Clinic (FerroEHR)" }
+  ],
+  "nodes": [
+    {
+      "nodeId": "node_ehrbase",
+      "systemId": "local.ehrbase.org",
+      "organisationId": "demo-hospital",
+      "product": "EHRbase",
+      "version": null
+    },
+    {
+      "nodeId": "node_ferroehr",
+      "systemId": "ferroehr.demo",
+      "organisationId": "demo-clinic",
+      "product": "FerroEHR",
+      "version": null
+    }
+  ],
+  "endpoints": [
+    {
+      "endpointId": "node_ehrbase",
+      "nodeId": "node_ehrbase",
+      "baseUrl": "http://ehrbase:8080/ehrbase/rest/openehr",
+      "pixManagerUrl": null,
+      "authProfile": null,
+      "status": "active"
+    },
+    {
+      "endpointId": "node_ferroehr",
+      "nodeId": "node_ferroehr",
+      "baseUrl": "http://ferroehr:8080/ferroehr/rest/openehr",
+      "pixManagerUrl": null,
+      "authProfile": null,
+      "status": "active"
+    }
+  ]
+}

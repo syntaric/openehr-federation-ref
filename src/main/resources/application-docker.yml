@@ -1,0 +1,29 @@
+# Docker Compose demo profile: the gateway federating two demo CDR nodes —
+# EHRbase (node_ehrbase) and FerroEHR (node_ferroehr). See docker-compose.yml.
+spring:
+  datasource:
+    url: jdbc:postgresql://federation-db:5432/federation
+    username: federation
+    password: federation
+
+federation:
+  security:
+    default-outbound-profile: passthrough
+  identity:
+    mode: static
+    # Demo patients resolve to the EHRs created by the seed-demo service. Both
+    # are present on BOTH nodes, which is what makes the federation visible: a
+    # single query returns the hospital's record merged with the clinic's.
+    static-mappings:
+      # John Doe — AML + asthma, penicillin allergy (hospital); hypertension (clinic)
+      "12345":
+        node_ehrbase: 11111111-1111-4111-8111-111111111111
+        node_ferroehr: 22222222-2222-4222-8222-222222222222
+      # Jane Roe — T2DM + CKD, sulfonamide allergy (hospital); retinopathy (clinic)
+      "67890":
+        node_ehrbase: 33333333-3333-4333-8333-333333333333
+        node_ferroehr: 44444444-4444-4444-8444-444444444444
+  # No registry block here: the demo federation is applied at startup from
+  # docker/demo-registry.json, which docker-compose.yml bind-mounts and points
+  # FEDERATION_REGISTRY_BOOTSTRAP_FILE at. Applying it is idempotent, so it runs
+  # on every boot without clobbering anything.

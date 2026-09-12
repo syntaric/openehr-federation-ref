@@ -1,0 +1,69 @@
+name: Conformance concern
+description: This implementation may not match the specification
+labels: ["conformance"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this when you believe the gateway's behaviour diverges from
+        *Proposal for Federation Tier with AQL* v0.3 — as opposed to an
+        ordinary bug, which is anything that is simply broken.
+
+        If the **specification itself** is unclear or contradictory, please
+        raise that in the
+        [specification repository](https://github.com/syntaric/openehr-federation-spec)
+        instead. It cannot be settled here.
+
+  - type: input
+    id: section
+    attributes:
+      label: Specification section (§)
+      placeholder: "§13.2.1"
+    validations:
+      required: true
+
+  - type: input
+    id: normative
+    attributes:
+      label: Normative statement (N-number)
+      placeholder: "N27a"
+
+  - type: input
+    id: cp
+    attributes:
+      label: Conformance point (CP-number)
+      description: From spec §17, if this maps to one.
+      placeholder: "CP-19"
+
+  - type: textarea
+    id: requirement
+    attributes:
+      label: What the specification requires
+      description: Quote or paraphrase the relevant text.
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What this implementation does
+      description: >-
+        Include the observed behaviour, and the test or code path if you have
+        found it. Please do not paste live clinical data.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: coverage
+    attributes:
+      label: Matrix status
+      description: >-
+        `ConformanceMatrixTest` prints a full report — `mvn test
+        -Dtest=ConformanceMatrixTest -Dsurefire.useFile=false`.
+      options:
+        - The matrix claims this CP is covered, but the behaviour is wrong
+        - The CP is deferred and I think it should not be
+        - This CP is not in the matrix at all
+        - Not sure
+    validations:
+      required: true

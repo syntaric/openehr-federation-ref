@@ -1,0 +1,14 @@
+target/
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
+__pycache__/
+
+# Local Claude Code configuration. Deliberately untracked: it names the private
+# sibling repo and a local filesystem path, neither of which belongs in a public
+# repository. check-no-leaks.sh would flag both if this were ever committed.
+.claude/
+.scripts/
