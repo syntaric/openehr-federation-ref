@@ -1,6 +1,6 @@
 # Conformance
 
-This implementation targets *Proposal for Federation Tier with AQL* v0.3.1
+This implementation targets *Proposal for Federation Tier with AQL* v0.9.0
 (Antora component `federation-aql`), and claims conformance with respect to
 **§1–§18**, the normative body of that specification.
 

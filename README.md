@@ -3,7 +3,7 @@
 [![CI](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml/badge.svg)](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A working implementation of *Proposal for Federation Tier with AQL* v0.4.0 — one
+A working implementation of *Proposal for Federation Tier with AQL* v0.9.0 — one
 AQL endpoint in front of many openEHR CDRs.
 
 A client sends one query. The gateway works out which nodes could hold records
@@ -57,7 +57,9 @@ Three consequences worth stating up front:
 ## Specification conformance
 
 Conformant with respect to **§1–§18**, the normative body of *Proposal for
-Federation Tier with AQL* v0.4.0 (Antora component `federation-aql`, CC0).
+Federation Tier with AQL* v0.9.0 (Antora component `federation-aql`, CC0).
+Building this gateway is what the specification's 0.9.0 release candidate status
+rests on: every section of that normative body has been implemented here.
 
 The claim is machine-checked: `ConformanceMatrixTest` requires every point in
 CP-1..CP-37 to be covered by a tagged test or explicitly deferred with a reason.

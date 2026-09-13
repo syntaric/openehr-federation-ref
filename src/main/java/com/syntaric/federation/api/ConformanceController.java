@@ -42,9 +42,11 @@ public class ConformanceController {
         final Map<String, Object> federation = new LinkedHashMap<>();
         federation.put("id", properties.federation().id());
         // §7a.2: major.minor only — patch releases are editorial and do not change
-        // the wire contract, so this stays "0.4" across 0.4.x. It moved 0.3 → 0.4
-        // because 0.4.0 *did* change the contract: rows are now ITS-REST arrays.
-        federation.put("spec_version", "0.4");
+        // the wire contract, so this stays "0.9" across 0.9.x. It tracks minor
+        // releases whether or not they change the contract: 0.3 → 0.4 did (rows
+        // became ITS-REST arrays), 0.4 → 0.9 did not, and reports only which
+        // release this gateway was built against.
+        federation.put("spec_version", "0.9");
         federation.put("aql", Map.of(
                 "fan_out", true,
                 "endpoint_directive", true,

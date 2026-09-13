@@ -84,9 +84,14 @@ property matters when that is not obvious.
 
 ## Versioning
 
-The version tracks the **specification** version, not a product release: `0.3.x`
-implements spec v0.3. A patch bump is an implementation change; the minor
+The version tracks the **specification** version, not a product release: `0.9.x`
+implements spec v0.9. A patch bump is an implementation change; the minor
 version moves when the specification does.
+
+When the specification's minor version moves, `federation.spec_version` in
+`ConformanceController` moves with it, and `ConformanceOptionsIT` asserts the new
+literal — so a spec bump is a two-repository change and the build tells you if
+half of it is missing.
 
 ## Reporting security issues
 

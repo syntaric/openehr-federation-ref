@@ -14,7 +14,7 @@
     <groupId>com.syntaric.federation</groupId>
     <artifactId>openehr-federation-ref</artifactId>
     <!-- Tracks the specification version this implements, not a product release. -->
-    <version>0.4.0-SNAPSHOT</version>
+    <version>0.9.0-SNAPSHOT</version>
     <name>openehr-federation-ref</name>
     <description>Reference implementation of the openEHR Federation Tier with AQL specification</description>
     <url>https://github.com/syntaric/openehr-federation-ref</url>

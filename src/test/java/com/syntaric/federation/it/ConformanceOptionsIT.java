@@ -39,10 +39,11 @@ class ConformanceOptionsIT extends IntegrationTestBase {
         assertThat(federation.get("timeout").get("per_node_ms").asLong()).isEqualTo(1500);
         assertThat(federation.get("timeout").get("overall_ms").asLong()).isEqualTo(2500);
         assertThat(federation.get("timeout").get("policy").asText()).isEqualTo("best-effort");
-        // §7a.2: spec_version is major.minor — a 0.4.x gateway reports "0.4"
-        // and a client MUST NOT match on a patch component. It moved 0.3 → 0.4
-        // with the ITS-REST row-shape correction, which did change the contract.
-        assertThat(federation.get("spec_version").asText()).isEqualTo("0.4");
+        // §7a.2: spec_version is major.minor — a 0.9.x gateway reports "0.9"
+        // and a client MUST NOT match on a patch component. It tracks minor
+        // releases: 0.3 → 0.4 carried the ITS-REST row-shape correction, and
+        // 0.4 → 0.9 carries no wire change at all, only the release identity.
+        assertThat(federation.get("spec_version").asText()).isEqualTo("0.9");
         assertThat(federation.get("spec_version").asText())
                 .as("major.minor only — a patch component here would break clients")
                 .matches("\\d+\\.\\d+");

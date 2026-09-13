@@ -8,7 +8,11 @@ version this implements — see [Versioning](CONTRIBUTING.md#versioning).
 ### Added
 
 - Initial public release: a reference implementation of *Proposal for Federation
-  Tier with AQL* v0.4.0 (https://github.com/syntaric/openehr-federation-spec).
+  Tier with AQL* v0.9.0 (https://github.com/syntaric/openehr-federation-spec).
+  Development ran against spec 0.4.0 and the findings below are recorded against
+  that version; the spec moved to 0.9.0 — release candidate, no wire change — on
+  the strength of having been implemented here, and this gateway targets 0.9.0.
+  `federation.spec_version` accordingly reports `"0.9"` rather than `"0.4"`.
 - **The result envelope is an openEHR ITS-REST `RESULT_SET`** (Release-1.1.0), and
   is now documented and tested as one rather than as a look-alike (§9.1). Three
   consequences, all of which changed the wire output during development against
