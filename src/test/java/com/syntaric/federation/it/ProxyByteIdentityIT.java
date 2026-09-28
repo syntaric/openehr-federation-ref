@@ -139,10 +139,17 @@ class ProxyByteIdentityIT extends IntegrationTestBase {
         assertThat(routed.getHeaders().getFirst("openEHR-federation-endpoint")).isEqualTo("node_2");
     }
 
+    /**
+     * Stored queries are held in this gateway's own registry (§12.7), so a name
+     * nobody stored is a 404 — not a 501, which would say the surface does not
+     * exist. The registry itself is exercised in {@code StoredQueryRegistryIT}.
+     */
     @Test
-    void storedQueriesAnswer501() {
+    @Tag("CP-40")
+    void unknownStoredQueryIs404() {
         ResponseEntity<JsonNode> response = exchangeJson(HttpMethod.GET,
                 "/v1/query/org.example::encounters", null, Map.of());
-        assertThat(response.getStatusCode().value()).isEqualTo(501);
+        assertThat(response.getStatusCode().value()).isEqualTo(404);
+        assertThat(response.getBody().get("error").asText()).isEqualTo("FED_NOT_FOUND");
     }
 }

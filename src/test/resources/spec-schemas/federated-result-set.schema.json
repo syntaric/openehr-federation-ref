@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/0.3/_attachments/federated-result-set.schema.json",
   "title": "Federated openEHR AQL result set",
-  "description": "The response body of POST {base}/v1/query/aql at a federation gateway conforming to 'Proposal for Federation Tier with AQL' §9.\n\nThis is an openEHR ITS-REST RESULT_SET, not a federation-specific structure. The definitions under $defs/itsRest are a constrained restatement of the ITS-REST Release-1.1.0 Query API schemas (computable/OAS/query-validation.openapi.yaml: ResultSet, ResultSetMetadata, ResultSetColumn, ResultSetRow, QueryName, AQL), inlined rather than $ref'd by URL so that validation is self-contained and CI does not depend on a third-party site being reachable. ITS-REST governs those members; where this schema and ITS-REST could be read differently on an inherited member, ITS-REST governs (§9.1).\n\nWhat this specification adds, and what this schema is therefore normative for, are the unprefixed federation keys in `meta`: complete, endpoints, timeout and dedup.",
+  "description": "The response body of POST {base}/v1/query/aql at a federation gateway conforming to 'Proposal for Federation Tier with AQL' §9.\n\nThis is an openEHR ITS-REST RESULT_SET, not a federation-specific structure. The definitions under $defs/itsRest are a constrained restatement of the ITS-REST Release-1.1.0 Query API schemas (computable/OAS/query-validation.openapi.yaml: ResultSet, ResultSetMetadata, ResultSetColumn, ResultSetRow, QueryName, AQL), inlined rather than $ref'd by URL so that validation is self-contained and CI does not depend on a third-party site being reachable. ITS-REST governs those members; where this schema and ITS-REST could be read differently on an inherited member, ITS-REST governs (§9.1).\n\nWhat this specification adds, and what this schema is therefore normative for, is the single unprefixed `meta.federation` object and the four members inside it: complete, endpoints, timeout and dedup.",
 
   "$comment": "Bound to openEHR ITS-REST Release-1.1.0 (19 July 2026). Spec §9.1 (result-set.adoc), N17, CP-35. Re-verify against the upstream OpenAPI before rebinding to a later release.",
 
@@ -59,13 +59,13 @@
 
     "federatedResultSetMetadata": {
       "title": "Federated ResultSetMetadata",
-      "description": "An ITS-REST ResultSetMetadata carrying this specification's federation additions. ITS-REST declares ResultSetMetadata with additionalProperties: true, which is precisely what makes these additions conformant rather than a deviation (§9.1).",
+      "description": "An ITS-REST ResultSetMetadata carrying this specification's federation additions. ITS-REST declares ResultSetMetadata with additionalProperties: true, which is precisely what makes these additions conformant rather than a deviation (§9.1).\n\nThe federation contributes exactly ONE member here - `federation` - and everything it adds lives inside it. Releases up to 0.9.0 carried `complete`, `endpoints`, `timeout` and `dedup` flat on `meta`; they are now nested (§9.1).",
       "type": "object",
 
       "$comment": "additionalProperties stays true: openEHR left this object open and the federation must not close it. Unknown keys are therefore accepted by design.",
       "additionalProperties": true,
 
-      "required": ["complete", "endpoints"],
+      "required": ["federation"],
 
       "properties": {
         "_href": { "type": "string", "format": "uri", "$comment": "ITS-REST" },
@@ -75,8 +75,23 @@
         "_generator": { "type": "string", "$comment": "ITS-REST" },
         "_executed_aql": { "type": "string", "$comment": "ITS-REST" },
 
+        "federation": { "$ref": "#/$defs/federationMeta" }
+      }
+    },
+
+    "federationMeta": {
+      "title": "meta.federation",
+      "description": "Everything this specification adds to `meta`, in one namespace (§9.1). Grouped rather than flat so that (a) a reader can tell at a glance which members the federation owns, (b) a future openEHR `meta` member cannot silently collide with a federation key of the same name, and (c) the extension is self-describing on the wire.\n\nThe object is UNPREFIXED: the `_` prefix is reserved to openEHR, so `_federation` is non-conformant, as are `_complete` and `_endpoints` (§9.1, N17, CP-35).",
+      "type": "object",
+
+      "$comment": "Open like `meta` itself: a deployment may carry additional federation-level diagnostics here (e.g. the §11.6.4 cursor handle, or the §14.1 localization error). Closing it would forbid the very extensions §11.6.4 and §14.1 ask for.",
+      "additionalProperties": true,
+
+      "required": ["complete", "endpoints"],
+
+      "properties": {
         "complete": {
-          "description": "Federation addition (§11.4, N37). True only when every IN-SCOPE node reached status 'active'. A node reported 'excluded' or 'not-localized' was never in scope and does not clear this flag. Answers 'did every node I asked answer?', not 'did I ask every node?'.",
+          "description": "Federation addition (§11.4, N37). True only when every IN-SCOPE node reached status 'active'. A node reported 'excluded' or 'not-localized' was never in scope and does not clear this flag. Answers 'did every node I asked answer?', not 'did I ask every node?'.\n\nUnder the all-or-nothing default of §11.4 a node that was ASKED and did not answer (offline, time-out) or answered with an error FAILS the query (504/424), and the failing response still carries this envelope with complete: false. But `false` on a 200 is NOT a violation of that default: 'not-resolved' and 'consent-denied' clear this flag without failing the query (§11.3 carve-out), as does any status under an opted-into best-effort request. A client MUST read this flag rather than infer coverage from the status code.",
           "type": "boolean"
         },
 
@@ -98,19 +113,24 @@
         },
 
         "dedup": {
-          "description": "Federation addition (§10, N15). The deduplication policy applied to this result set. 'none' is the default; a gateway that suppressed rows records the mode it used.",
+          "description": "Federation addition (§10, N15). The deduplication policy applied to this result set, and the endpoints whose rows it suppressed (§10.3). 'none' is the default; a gateway that suppressed rows records the mode it used.",
           "type": "object",
           "additionalProperties": true,
           "properties": {
             "mode": { "type": "string" },
-            "suppressed_rows": { "type": "integer", "minimum": 0 }
+            "suppressed_rows": { "type": "integer", "minimum": 0 },
+            "suppressed_endpoints": {
+              "description": "SHOULD, when rows were suppressed (§10.3, N36). The endpoint_ids whose copies were dropped, so a client can tell that other copies exist and that a write it issues will not update them.",
+              "type": "array",
+              "items": { "type": "string" }
+            }
           }
         }
       }
     },
 
     "endpointOutcome": {
-      "title": "meta.endpoints[] entry",
+      "title": "meta.federation.endpoints[] entry",
       "description": "What happened to one endpoint during this query (§9.5). Obligation levels are those of the §9.5 field table and N40.",
       "type": "object",
 

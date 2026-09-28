@@ -23,7 +23,7 @@ import java.util.Set;
 /**
  * Merges per-node outcomes into the federated result envelope: tier-level
  * dedup / DISTINCT / ORDER BY / LIMIT (N39), endpoint and subject column
- * re-injection, and the §9.4 meta block.
+ * re-injection, and the §9.4 {@code meta.federation} block.
  */
 public final class FederatedResultAssembler {
 
@@ -40,7 +40,21 @@ public final class FederatedResultAssembler {
             String subjectId,
             String dedupMode,
             TimeoutBudget budget,
-            long configuredOverallMs) {
+            long configuredOverallMs,
+            /** The stored query this answers under, or null for ad-hoc AQL (§12.7). */
+            String queryName) {
+    }
+
+    /**
+     * The {@code meta} a failing fan-out still carries (§11.4): every outcome
+     * with its status and error, {@code complete: false} by construction, the
+     * budget in force, and no dedup because no rows were merged. Same endpoint
+     * loop as the success path so the two cannot drift.
+     */
+    public static ResultEnvelope.Meta failureMeta(final Assembly assembly) {
+        final ResultEnvelope.FederationMeta federation = buildFederationMeta(assembly, List.of());
+        return new ResultEnvelope.Meta(new ResultEnvelope.FederationMeta(
+                false, federation.endpoints(), federation.timeout(), null));
     }
 
     public static ResultEnvelope assemble(final Assembly assembly) {
@@ -110,7 +124,8 @@ public final class FederatedResultAssembler {
                 .map(row -> toPositionalRow(projectRow(row, assembly, nodeColumns), columns))
                 .toList();
 
-        return new ResultEnvelope(assembly.facadeAql(), columns, rows, buildMeta(assembly, suppressed));
+        return new ResultEnvelope(assembly.queryName(), assembly.facadeAql(), columns, rows,
+                new ResultEnvelope.Meta(buildFederationMeta(assembly, suppressed)));
     }
 
     // ---- columns -------------------------------------------------------------
@@ -239,8 +254,8 @@ public final class FederatedResultAssembler {
 
     // ---- meta ----------------------------------------------------------------
 
-    private static ResultEnvelope.Meta buildMeta(final Assembly assembly,
-                                                 final List<ResultEnvelope.Dedup.Suppressed> suppressed) {
+    private static ResultEnvelope.FederationMeta buildFederationMeta(
+            final Assembly assembly, final List<ResultEnvelope.Dedup.Suppressed> suppressed) {
         final List<ResultEnvelope.EndpointMeta> endpointMetas = new ArrayList<>();
         // §11.1 "What in scope means" / N37: complete is true only when every
         // node that was IN SCOPE reached active. `excluded` and `not-localized`
@@ -248,11 +263,8 @@ public final class FederatedResultAssembler {
         // reported but do not clear the flag. Without this, a nine-member
         // federation whose localizer names three would report complete: false
         // on every undirected query, which is the ordinary case, not a defect.
-        boolean complete = true;
+        final boolean complete = assembly.outcomes().stream().noneMatch(NodeOutcome::clearsComplete);
         for (final NodeOutcome outcome : assembly.outcomes()) {
-            if (outcome.inScope() && !outcome.succeeded()) {
-                complete = false;
-            }
             final EndpointDescriptor d = assembly.endpointInfo().get(outcome.endpointId());
             endpointMetas.add(new ResultEnvelope.EndpointMeta(
                     outcome.endpointId(),
@@ -279,8 +291,8 @@ public final class FederatedResultAssembler {
                 assembly.configuredOverallMs(),
                 assembly.budget().overall().toMillis());
         final ResultEnvelope.Dedup dedup = "version-identity".equals(assembly.dedupMode())
-                ? new ResultEnvelope.Dedup("version-identity", suppressed)
+                ? ResultEnvelope.Dedup.of("version-identity", suppressed)
                 : null;
-        return new ResultEnvelope.Meta(complete, endpointMetas, timeout, dedup);
+        return new ResultEnvelope.FederationMeta(complete, endpointMetas, timeout, dedup);
     }
 }

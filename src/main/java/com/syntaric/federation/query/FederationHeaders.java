@@ -12,7 +12,10 @@ public final class FederationHeaders {
     public static final String DEDUP = "openEHR-federation-dedup";
     public static final String PREFER = "Prefer";
 
+    /** The default, accepted explicitly so a client can state it (§11.4). */
     public static final String COMPLETENESS_ALL = "all";
+    /** Opt-in best-effort: rows that arrived, {@code complete: false}, 200 (§11.4). */
+    public static final String COMPLETENESS_PARTIAL = "partial";
     public static final String DEDUP_VERSION_IDENTITY = "version-identity";
     public static final String DEDUP_NONE = "none";
 

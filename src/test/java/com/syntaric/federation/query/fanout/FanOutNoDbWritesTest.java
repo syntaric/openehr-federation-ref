@@ -110,6 +110,7 @@ class FanOutNoDbWritesTest {
                 null,
                 null,
                 new FederationProperties.Security("passthrough", Map.of(), null),
+                null,
                 null);
         // The executor is constructed by hand with its only real collaborator. If
         // a persistence dependency is ever re-added, this line stops compiling —

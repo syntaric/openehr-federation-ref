@@ -3,4 +3,4 @@ SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE e/ehr_status/subject/
 == ehr_id
 550e8400-e29b-41d4-a716-446655440000
 == expected
-ERROR:FED_IDENTIFIER_UNSTRIPPABLE
+SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c WHERE (e/ehr_id/value = '550e8400-e29b-41d4-a716-446655440000' AND c/composer/identifiers/id = '999')

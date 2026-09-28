@@ -21,8 +21,18 @@ federation:
     per-node: 10s
     overall-budget: 15s
     connect: 2s
+  completeness:
+    # §11.4: all-or-nothing is the default and is not a setting. This is whether
+    # a client may opt into best-effort per request with
+    # `openEHR-federation-completeness: partial`. Set to false to reject it.
+    offer-best-effort: true
   identity:
     mode: static
+    # The issuing namespace assumed for a patient identifier the query does not
+    # qualify itself (§5.2). Set it to the federation's patient identifier
+    # domain; it is what PIXm is asked to resolve from and it keys the
+    # resolution_binding hash.
+    # default-namespace: urn:oid:2.16.840.1.113883.2.4.6.3
   security:
     # Outbound only. This gateway does not authenticate its own callers — see the
     # Javadoc on FederationProperties.Security. Anything that can reach this port

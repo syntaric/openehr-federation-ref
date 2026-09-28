@@ -87,26 +87,135 @@ class SpecSchemaConformanceIT extends IntegrationTestBase {
     }
 
     /**
-     * §9.1/N17: the federation's {@code meta} additions use the ITS-REST
-     * {@code additionalProperties: true} extension point and are never
-     * {@code _}-prefixed — that prefix is reserved to openEHR.
+     * §9.1/N17 as amended: the federation contributes exactly one member to
+     * {@code meta} — {@code federation} — and everything it adds lives inside
+     * it. The flat form releases up to 0.9.0 emitted is now a CP-35 failure,
+     * and the {@code _} prefix stays reserved to openEHR, so {@code _federation}
+     * is as wrong as {@code _complete} was.
      */
     @Test
     @Tag("CP-35")
-    void federationMetaAdditionsAreNotUnderscorePrefixed() {
+    void federationMetaAdditionsAreNestedAndNotUnderscorePrefixed() {
         stubQuery(NODE_1, "[]", 0);
         stubQuery(NODE_2, "[]", 0);
         stubQuery(NODE_3, "[]", 0);
 
         JsonNode meta = query(SUBJECT_QUERY, Map.of()).getBody().get("meta");
 
-        assertThat(meta.has("complete")).isTrue();
-        assertThat(meta.has("endpoints")).isTrue();
-        for (String reserved : List.of("_complete", "_endpoints", "_timeout", "_dedup")) {
+        assertThat(meta.has("federation")).isTrue();
+        assertThat(meta.get("federation").has("complete")).isTrue();
+        assertThat(meta.get("federation").has("endpoints")).isTrue();
+        for (String flat : List.of("complete", "endpoints", "timeout", "dedup")) {
+            assertThat(meta.has(flat))
+                    .as("%s: the pre-amendment flat key must not be emitted beside the nested form", flat)
+                    .isFalse();
+        }
+        for (String reserved : List.of("_federation", "_complete", "_endpoints", "_timeout", "_dedup")) {
             assertThat(meta.has(reserved))
                     .as("%s: the `_` prefix is reserved to openEHR-defined fields", reserved)
                     .isFalse();
         }
+    }
+
+    /**
+     * §11.4 failure-carries-envelope: a 504 under the default strategy MUST
+     * carry {@code meta.federation.endpoints[]} and {@code complete: false}. The
+     * error body is not a RESULT_SET, so the {@code meta} is validated by
+     * wrapping it in the smallest instance the envelope schema accepts — which
+     * is exactly the shape a client reading the error would rely on.
+     */
+    @Test
+    @Tag("CP-35")
+    @Tag("CP-30")
+    void failingResponseMetaValidatesAgainstTheEnvelopeSchema() {
+        stubQuery(NODE_1, "[]", 0);
+        stubQuery(NODE_2, "[]", 3000);
+        stubQuery(NODE_3, "[]", 0);
+
+        ResponseEntity<JsonNode> response = query(SUBJECT_QUERY, Map.of());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(504);
+        JsonNode meta = response.getBody().get("meta");
+        assertThat(meta.get("federation").get("complete").asBoolean()).isFalse();
+        com.fasterxml.jackson.databind.node.ObjectNode wrapped =
+                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        wrapped.putArray("rows");
+        wrapped.set("meta", meta);
+        SpecSchemaValidator.assertValid(wrapped, SpecSchemaValidator.RESULT_SET);
+    }
+
+    /**
+     * A member that is genuinely unreachable — a dead port, not a slow stub —
+     * must still produce an {@code offline} entry with a non-empty {@code error},
+     * which the schema requires. The other failure ITs use a delayed or a 500
+     * WireMock stub; this was the one shape that only the demo stack exercised,
+     * and it was wrong there: the JDK's refused-connection exception carries an
+     * empty message.
+     */
+    @Test
+    @Tag("CP-35")
+    @Tag("CP-30")
+    void unreachableMemberIsOfflineWithAnErrorAndStillValidates() {
+        stubQuery(NODE_1, "[]", 0);
+        stubQuery(NODE_2, "[]", 0);
+        stubQuery(NODE_3, "[]", 0);
+        // Port 1 is reserved and nothing listens there; the connect fails at once.
+        fixture.source("org-b", "node_dead", "cdr-dead.test", "http://127.0.0.1:1");
+        try {
+            // Subject-less, so every active member is dispatched to, node_dead included.
+            String undirected = "SELECT c/uid/value AS composition_id FROM EHR e CONTAINS COMPOSITION c";
+
+            ResponseEntity<JsonNode> failed = query(undirected, Map.of());
+            assertThat(failed.getStatusCode().value()).isEqualTo(504);
+            JsonNode dead = endpoint(failed.getBody().get("meta"), "node_dead");
+            assertThat(dead.get("status").asText()).isEqualTo("offline");
+            assertThat(dead.hasNonNull("error")).isTrue();
+            assertThat(dead.get("error").asText()).isNotBlank();
+            com.fasterxml.jackson.databind.node.ObjectNode wrapped =
+                    new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            wrapped.putArray("rows");
+            wrapped.set("meta", failed.getBody().get("meta"));
+            SpecSchemaValidator.assertValid(wrapped, SpecSchemaValidator.RESULT_SET);
+
+            ResponseEntity<JsonNode> partial = query(undirected,
+                    Map.of("openEHR-federation-completeness", "partial"));
+            assertThat(partial.getStatusCode().value()).isEqualTo(200);
+            SpecSchemaValidator.assertValid(partial.getBody(), SpecSchemaValidator.RESULT_SET);
+        } finally {
+            fixture.removeSource("node_dead", "node_dead");
+        }
+    }
+
+    private static JsonNode endpoint(JsonNode meta, String id) {
+        for (JsonNode e : meta.get("federation").get("endpoints")) {
+            if (id.equals(e.get("id").asText())) {
+                return e;
+            }
+        }
+        throw new AssertionError("endpoint " + id + " not in meta.federation.endpoints");
+    }
+
+    /** §12.7 / §9.1: a stored query's envelope carries ITS-REST's {@code name} and still validates. */
+    @Test
+    @Tag("CP-35")
+    @Tag("CP-40")
+    void storedQueryEnvelopeValidatesAgainstThePublishedSchema() {
+        stubQuery(NODE_1, "[" + row("aaaaaaaa-1111-0000-0000-000000000001::cdr1.test::1",
+                "2026-01-01T10:00") + "]", 0);
+        stubQuery(NODE_2, "[]", 0);
+        stubQuery(NODE_3, "[]", 0);
+        String name = "schema" + java.util.UUID.randomUUID().toString().replace("-", "") + "::encounters";
+        ResponseEntity<JsonNode> stored = exchangeJson(HttpMethod.PUT,
+                "/v1/definition/query/" + name + "/1.0.0",
+                Map.of("q", SUBJECT_QUERY.replace("'" + PATIENT_ID + "'", "$patient_id")), Map.of());
+        assertThat(stored.getStatusCode().value()).isEqualTo(200);
+
+        ResponseEntity<JsonNode> response = exchangeJson(HttpMethod.POST, "/v1/query/" + name,
+                Map.of("query_parameters", Map.of("patient_id", PATIENT_ID)), Map.of());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody().get("name").asText()).isEqualTo(name);
+        SpecSchemaValidator.assertValid(response.getBody(), SpecSchemaValidator.RESULT_SET);
     }
 
     /**
@@ -127,15 +236,16 @@ class SpecSchemaConformanceIT extends IntegrationTestBase {
                         .aResponse().withStatus(500)));
         stubQuery(NODE_3, "[]", 0);
 
-        ResponseEntity<JsonNode> response = query(SUBJECT_QUERY, Map.of());
+        ResponseEntity<JsonNode> response = query(SUBJECT_QUERY,
+                Map.of("openEHR-federation-completeness", "partial"));
         JsonNode body = response.getBody();
 
-        // A partial answer is a successful response with an incomplete-coverage
-        // marker, not an error (§11.4).
+        // Under the opted-in best-effort mode a partial answer is a successful
+        // response with an incomplete-coverage marker, not an error (§11.4).
         assertThat(response.getStatusCode().value()).isEqualTo(200);
         SpecSchemaValidator.assertValid(body, SpecSchemaValidator.RESULT_SET);
 
-        for (JsonNode endpoint : body.get("meta").get("endpoints")) {
+        for (JsonNode endpoint : body.get("meta").get("federation").get("endpoints")) {
             String status = endpoint.get("status").asText();
             if (List.of("excluded", "not-localized").contains(status)) {
                 assertThat(endpoint.has("latency_ms"))

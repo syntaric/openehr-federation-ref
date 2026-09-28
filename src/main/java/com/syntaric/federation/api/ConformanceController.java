@@ -3,6 +3,7 @@ package com.syntaric.federation.api;
 
 import com.syntaric.federation.config.FederationProperties;
 import com.syntaric.federation.query.EndpointDescriptor;
+import com.syntaric.federation.query.FederationHeaders;
 import com.syntaric.federation.identity.spi.NodeAddressingService;
 import com.syntaric.federation.registry.Endpoint;
 import com.syntaric.federation.registry.RegistryService;
@@ -19,9 +20,9 @@ import java.util.Map;
 
 /**
  * N30/CP-23: {@code OPTIONS {base}/} self-description — ITS-REST area map,
- * targeting mechanisms, dedup modes, timeout policy and the member endpoint
- * list (federation membership information, never patient data). The JSON shape
- * follows the spec §7a.2 example verbatim.
+ * dedup modes, completion strategy, timeout policy, the stored-query registry
+ * and the member endpoint list (federation membership information, never
+ * patient data). The JSON shape follows the spec §7a.2 example verbatim.
  */
 @RestController
 public class ConformanceController {
@@ -47,10 +48,11 @@ public class ConformanceController {
         // became ITS-REST arrays), 0.4 → 0.9 did not, and reports only which
         // release this gateway was built against.
         federation.put("spec_version", "0.9");
-        federation.put("aql", Map.of(
-                "fan_out", true,
-                "endpoint_directive", true,
-                "endpoint_header", true));
+        // §7a.2: the targeting mechanisms are deliberately NOT declared. Both the
+        // FROM ENDPOINT directive and the openEHR-federation-endpoint header are
+        // mandatory at every conformant gateway (N35), so the only conformant
+        // declaration would be "both" and a client learns nothing from it.
+        federation.put("aql", Map.of("fan_out", true));
         federation.put("dedup", Map.of(
                 "default", "none",
                 "modes", List.of("none", "version-identity"),
@@ -58,20 +60,35 @@ public class ConformanceController {
         federation.put("timeout", Map.of(
                 "per_node_ms", properties.timeouts().perNode().toMillis(),
                 "overall_ms", properties.timeouts().overallBudget().toMillis(),
-                "policy", "best-effort"));
-        // §7a.2: every behaviour the spec requires be declared under N30.
-        federation.put("completeness", Map.of(
-                "default", "best-effort",
-                "all_or_nothing", true,
-                "opt_in", Map.of("header", "openEHR-federation-completeness", "value", "all")));
+                "policy", "all-or-nothing"));
+        // §7a.2 / §11.4: all-or-nothing is the default and needs no declaration
+        // beyond `default`; what a deployment declares is whether the opt-in
+        // best-effort mode exists and, if so, how a client selects it.
+        final boolean bestEffort = properties.completeness().offerBestEffort();
+        final Map<String, Object> completeness = new LinkedHashMap<>();
+        completeness.put("default", "all-or-nothing");
+        completeness.put("best_effort", bestEffort);
+        if (bestEffort) {
+            completeness.put("opt_in", Map.of(
+                    "header", FederationHeaders.COMPLETENESS,
+                    "value", FederationHeaders.COMPLETENESS_PARTIAL));
+        }
+        federation.put("completeness", completeness);
         // N39 / §11.6.2. "reject" is the fan-out behaviour; a directed
         // single-node query passes OFFSET through to that node.
         federation.put("paging", Map.of("offset_strategy", "reject"));
         // §11.6.3: none are decomposed across nodes. An aggregate is answered
         // only when a directive pins the query to a single node.
         federation.put("aggregates", Map.of("decomposable", List.of()));
-        // N43: no fan-out template upload (DefinitionController).
-        federation.put("definition", Map.of("fan_out_template_upload", false));
+        // N43: no fan-out template upload (DefinitionController). N44 / §12.7:
+        // the gateway holds stored queries in its own registry and expands them
+        // into a fan-out when invoked by name; it does not distribute the
+        // definitions to nodes. The three are independent booleans by design.
+        final Map<String, Object> definition = new LinkedHashMap<>();
+        definition.put("fan_out_template_upload", false);
+        definition.put("stored_query_registry", true);
+        definition.put("stored_query_fan_out", false);
+        federation.put("definition", definition);
         // §14.1: what an unanswered localizer means here.
         federation.put("localization", Map.of(
                 "on_failure", properties.localization().onFailure()
@@ -80,11 +97,15 @@ public class ConformanceController {
         // rather than faked when the deployment has not configured one.
         putIfPresent(federation, "auth", properties.federation().jwksUri() == null ? null
                 : Map.of("jwks_uri", properties.federation().jwksUri()));
-        federation.put("its_rest", Map.of(
-                "query", "federated",
-                "ehr", "routed",
-                "definition", "routed-single-node",
-                "demographic", "unsupported"));
+        // §7a.2 definition-area-split: `its_rest.definition` describes the area,
+        // `definition.stored_query_registry` one artefact within it — templates
+        // route to one node, stored queries live here. Free-form by design.
+        final Map<String, Object> itsRest = new LinkedHashMap<>();
+        itsRest.put("query", "federated");
+        itsRest.put("ehr", "routed");
+        itsRest.put("definition", "routed-single-node; stored queries at the gateway registry");
+        itsRest.put("demographic", "unsupported");
+        federation.put("its_rest", itsRest);
 
         final List<Map<String, Object>> endpoints = new ArrayList<>();
         for (final EndpointDescriptor descriptor : addressing.activeMembers()) {

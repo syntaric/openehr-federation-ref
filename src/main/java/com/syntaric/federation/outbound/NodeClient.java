@@ -46,9 +46,12 @@ public class NodeClient {
 
     /**
      * Dispatches standard AQL to the node. Throws
-     * {@link java.net.http.HttpTimeoutException} on per-node timeout and
-     * {@link IOException} on connection failure — the fan-out executor maps
-     * those to {@code time-out} / {@code offline}.
+     * {@link java.net.http.HttpTimeoutException} on per-node timeout,
+     * {@link NodeHttpErrorException} when the node answered with a non-200
+     * status, and a plain {@link IOException} on connection failure — the
+     * fan-out executor maps those to {@code time-out} / a node error /
+     * {@code offline}, which is what decides between §11.4's {@code 504} and
+     * {@code 424}.
      */
     public NodeQueryResponse query(final String aql, final Duration timeout, final String inboundAuthorization)
             throws IOException, InterruptedException {
@@ -63,7 +66,7 @@ public class NodeClient {
         final HttpResponse<byte[]> response =
                 httpClient.send(request.build(), HttpResponse.BodyHandlers.ofByteArray());
         if (response.statusCode() != 200) {
-            throw new IOException("Node returned HTTP " + response.statusCode());
+            throw new NodeHttpErrorException(response.statusCode(), response.body());
         }
         return objectMapper.readValue(response.body(), NodeQueryResponse.class);
     }

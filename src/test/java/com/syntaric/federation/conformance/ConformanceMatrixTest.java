@@ -20,9 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Build-enforcing traceability matrix against the federation spec's three ID
- * schemes: conformance points (CP-1..CP-37 +CP-33a, §17), normative
- * requirements (N1..N43 +N27a +N42a, §6) and Connectathon tracks
- * (TRACK-1..11, §16.3). Tracked against spec 0.3.1.
+ * schemes: conformance points (CP-1..CP-40 +CP-33a, §17), normative
+ * requirements (N1..N44 +N27a +N42a, §6) and Connectathon tracks
+ * (TRACK-1..11, §16.3). Tracked against spec 0.9.0 plus the SEC amendments of
+ * 2026-09-28, which added CP-39/CP-40 and N44 without a version bump.
  *
  * <p>Coverage is discovered by scanning every test class under
  * {@code com.syntaric.federation} for {@code @Tag}s — <em>not</em> from a hand-listed
@@ -96,7 +97,16 @@ class ConformanceMatrixTest {
             // (CP-37) previously reached no conformance point.
             Map.entry("CP-35", List.of("N17", "N18")),
             Map.entry("CP-36", List.of("N8")),
-            Map.entry("CP-37", List.of("N12")));
+            Map.entry("CP-37", List.of("N12")),
+            // Added in spec 0.9.0 when §5.4.3 made both patient-identifier
+            // carriers mandatory: scores acceptance of the ENTRY-level subject
+            // form and non-rejection of clinician/facility predicates.
+            Map.entry("CP-38", List.of("N33")),
+            // Added by the SEC amendments: CP-39 scores the §13.4 authn
+            // decisions as documentation (docs/security.md); CP-40 scores the
+            // optional stored-query registry of §12.7.
+            Map.entry("CP-39", List.of("N25")),
+            Map.entry("CP-40", List.of("N44")));
 
     /**
      * Requirements no conformance point names, with the spec location that
@@ -224,8 +234,8 @@ class ConformanceMatrixTest {
 
     /**
      * Single source of truth for the conformance claims in {@code README.md}
-     * and {@code documentation/overview.rst}; those numbers are generated from
-     * this output rather than hand-maintained.
+     * and {@code docs/conformance.md}; those numbers are generated from this
+     * output rather than hand-maintained.
      */
     @Test
     void matrixReport() {
@@ -286,8 +296,9 @@ class ConformanceMatrixTest {
 
     private Set<String> allConformancePoints() {
         Set<String> all = new LinkedHashSet<>();
-        // CP-35..CP-37 added in spec 0.3.1.
-        for (int i = 1; i <= 37; i++) {
+        // CP-35..CP-37 added in spec 0.3.1; CP-38 in 0.9.0; CP-39..CP-40 by the
+        // SEC amendments after 0.9.0.
+        for (int i = 1; i <= 40; i++) {
             all.add("CP-" + i);
             if (i == 33) {
                 all.add("CP-33a");
@@ -298,7 +309,8 @@ class ConformanceMatrixTest {
 
     private Set<String> allRequirements() {
         Set<String> all = new LinkedHashSet<>();
-        for (int i = 1; i <= 43; i++) {
+        // N44 (the stored-query registry) added by the SEC amendments.
+        for (int i = 1; i <= 44; i++) {
             all.add("N" + i);
             if (i == 27) {
                 all.add("N27a");

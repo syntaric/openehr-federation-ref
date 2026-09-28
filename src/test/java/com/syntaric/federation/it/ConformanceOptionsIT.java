@@ -29,8 +29,11 @@ class ConformanceOptionsIT extends IntegrationTestBase {
         JsonNode federation = response.getBody().get("federation");
         assertThat(federation.get("id").asText()).isEqualTo("reference-federation");
         assertThat(federation.get("aql").get("fan_out").asBoolean()).isTrue();
-        assertThat(federation.get("aql").get("endpoint_directive").asBoolean()).isTrue();
-        assertThat(federation.get("aql").get("endpoint_header").asBoolean()).isTrue();
+        // §7a.2 targeting-not-declared: both the directive and the header are
+        // mandatory at every conformant gateway (N35), so declaring them says
+        // nothing and the keys were removed from the schema.
+        assertThat(federation.get("aql").has("endpoint_directive")).isFalse();
+        assertThat(federation.get("aql").has("endpoint_header")).isFalse();
         assertThat(federation.get("dedup").get("default").asText()).isEqualTo("none");
         List<String> modes = new ArrayList<>();
         federation.get("dedup").get("modes").forEach(m -> modes.add(m.asText()));
@@ -38,11 +41,13 @@ class ConformanceOptionsIT extends IntegrationTestBase {
         // N38: both timeout values are mandatory and discoverable
         assertThat(federation.get("timeout").get("per_node_ms").asLong()).isEqualTo(1500);
         assertThat(federation.get("timeout").get("overall_ms").asLong()).isEqualTo(2500);
-        assertThat(federation.get("timeout").get("policy").asText()).isEqualTo("best-effort");
+        assertThat(federation.get("timeout").get("policy").asText()).isEqualTo("all-or-nothing");
         // §7a.2: spec_version is major.minor — a 0.9.x gateway reports "0.9"
         // and a client MUST NOT match on a patch component. It tracks minor
         // releases: 0.3 → 0.4 carried the ITS-REST row-shape correction, and
         // 0.4 → 0.9 carries no wire change at all, only the release identity.
+        // The SEC amendments changed the wire contract without moving it; the
+        // spec owes a bump before release and this literal moves with it.
         assertThat(federation.get("spec_version").asText()).isEqualTo("0.9");
         assertThat(federation.get("spec_version").asText())
                 .as("major.minor only — a patch component here would break clients")
@@ -53,7 +58,9 @@ class ConformanceOptionsIT extends IntegrationTestBase {
         JsonNode itsRest = federation.get("its_rest");
         assertThat(itsRest.get("query").asText()).isEqualTo("federated");
         assertThat(itsRest.get("ehr").asText()).isEqualTo("routed");
-        assertThat(itsRest.get("definition").asText()).isEqualTo("routed-single-node");
+        // §7a.2 definition-area-split: the area description names both halves
+        assertThat(itsRest.get("definition").asText())
+                .isEqualTo("routed-single-node; stored queries at the gateway registry");
         assertThat(itsRest.get("demographic").asText()).isEqualTo("unsupported");
     }
 
@@ -70,12 +77,26 @@ class ConformanceOptionsIT extends IntegrationTestBase {
                 exchangeJson(HttpMethod.OPTIONS, "/", null, Map.of());
         JsonNode federation = response.getBody().get("federation");
 
-        // N37: whether all-or-nothing completeness is offered
-        assertThat(federation.get("completeness").get("all_or_nothing").asBoolean()).isTrue();
+        // N37 / §11.4: all-or-nothing is the default and the only conformant
+        // value; what is declared is the opt-in best-effort mode and how a
+        // client selects it. The polarity reversed in the SEC amendments.
+        JsonNode completeness = federation.get("completeness");
+        assertThat(completeness.get("default").asText()).isEqualTo("all-or-nothing");
+        assertThat(completeness.get("best_effort").asBoolean()).isTrue();
+        assertThat(completeness.get("opt_in").get("header").asText())
+                .isEqualTo("openEHR-federation-completeness");
+        assertThat(completeness.get("opt_in").get("value").asText()).isEqualTo("partial");
+        assertThat(completeness.has("all_or_nothing"))
+                .as("the pre-amendment key must not linger beside the new one")
+                .isFalse();
         // §11.6.3: which aggregates are decomposable across nodes — none are
         assertThat(federation.get("aggregates").get("decomposable")).isEmpty();
-        // N43: whether fan-out template upload is offered
-        assertThat(federation.get("definition").get("fan_out_template_upload").asBoolean()).isFalse();
+        // N43: whether fan-out template upload is offered; N44 / §12.7: the
+        // stored-query registry is, definition fan-out to nodes is not.
+        JsonNode definition = federation.get("definition");
+        assertThat(definition.get("fan_out_template_upload").asBoolean()).isFalse();
+        assertThat(definition.get("stored_query_registry").asBoolean()).isTrue();
+        assertThat(definition.get("stored_query_fan_out").asBoolean()).isFalse();
         // §14.1: what an unanswered localizer means. "closed" is the spec
         // default and this build's; the point is that it is now *declared*.
         assertThat(federation.get("localization").get("on_failure").asText()).isEqualTo("closed");

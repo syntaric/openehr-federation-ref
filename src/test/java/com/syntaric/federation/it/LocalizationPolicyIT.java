@@ -169,7 +169,7 @@ class LocalizationPolicyIT extends IntegrationTestBase {
                 .containsEntry("node_2", "not-localized")
                 .containsEntry("node_3", "not-localized");
 
-        assertThat(response.getBody().get("meta").get("complete").asBoolean())
+        assertThat(response.getBody().get("meta").get("federation").get("complete").asBoolean())
                 .as("nodes that were never in scope must not clear meta.complete (§11.1)")
                 .isTrue();
 
@@ -256,21 +256,37 @@ class LocalizationPolicyIT extends IntegrationTestBase {
 
         ResponseEntity<JsonNode> response = query();
 
-        // The query succeeds and returns what node_1 had: one node refusing is
-        // a partial result, never a failed federation.
-        assertThat(response.getStatusCode().value()).isEqualTo(200);
-        assertThat(response.getBody().get("rows")).hasSize(1);
+        // A node 403 after dispatch is a node error like any other: the gateway
+        // cannot tell a consent refusal from a misconfigured authorization
+        // server, and reporting `consent-denied` would assert a decision it
+        // cannot see. Under the all-or-nothing default (§11.4) that fails the
+        // query with 424 — the node answered, with an error — and the envelope
+        // still says which node and why.
+        assertThat(response.getStatusCode().value()).isEqualTo(424);
+        assertThat(response.getBody().get("error").asText()).isEqualTo("FED_NODE_ERROR");
 
         Map<String, String> statuses = statusByEndpoint(response.getBody());
         assertThat(statuses).containsEntry("node_1", "active");
         assertThat(statuses.get("node_3"))
                 .as("a localized node that refused must be reported, not silently dropped")
-                .isNotEqualTo("active");
+                .isEqualTo("offline");
+        assertThat(statuses.get("node_3")).isNotEqualTo("consent-denied");
+        assertThat(endpointEntry(response.getBody(), "node_3").get("error").asText())
+                .contains("403").contains("consent denied for this requester");
         // node_2 was never localized: still a where-answer, now `not-localized`.
         assertThat(statuses).containsEntry("node_2", "not-localized");
         // And the node WAS asked — localization is a filter in front of the
         // gate, not the gate (§13.2.1).
         assertQueried(NODE_3);
+
+        // A client that will take a partial answer says so, and gets node_1's row.
+        NODE_1.resetRequests();
+        NODE_3.resetRequests();
+        ResponseEntity<JsonNode> partial = query(Map.of("openEHR-federation-completeness", "partial"));
+        assertThat(partial.getStatusCode().value()).isEqualTo(200);
+        assertThat(partial.getBody().get("rows")).hasSize(1);
+        assertThat(partial.getBody().get("meta").get("federation").get("complete").asBoolean()).isFalse();
+        assertThat(statusByEndpoint(partial.getBody())).containsEntry("node_3", "offline");
     }
 
     /**
@@ -280,6 +296,7 @@ class LocalizationPolicyIT extends IntegrationTestBase {
      */
     @Test
     @Tag("CP-19")
+    @Tag("CP-30")
     @DisplayName("a consent-aware localizer's refusal is reported as consent-denied")
     void aConsentAwareLocalizerReportsConsentDenied() {
         NEXT_RESULT.set(LocalizationResult.localized(
@@ -287,6 +304,14 @@ class LocalizationPolicyIT extends IntegrationTestBase {
         stubAllNodesAnswering();
 
         ResponseEntity<JsonNode> response = query();
+
+        // §11.3: a refusal is a decision, not an outage. It clears `complete`
+        // and never fails the query, even under the all-or-nothing default —
+        // a federation that failed every query about a patient who opted out
+        // at one node would leak that opt-out through the error.
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertThat(response.getBody().get("rows")).hasSize(1);
+        assertThat(response.getBody().get("meta").get("federation").get("complete").asBoolean()).isFalse();
 
         Map<String, String> statuses = statusByEndpoint(response.getBody());
         assertThat(statuses).containsEntry("node_1", "active");
@@ -353,7 +378,20 @@ class LocalizationPolicyIT extends IntegrationTestBase {
     }
 
     private ResponseEntity<JsonNode> query() {
-        return exchangeJson(HttpMethod.POST, "/v1/query/aql", Map.of("q", SUBJECT_QUERY), Map.of());
+        return query(Map.of());
+    }
+
+    private ResponseEntity<JsonNode> query(Map<String, String> headers) {
+        return exchangeJson(HttpMethod.POST, "/v1/query/aql", Map.of("q", SUBJECT_QUERY), headers);
+    }
+
+    private static JsonNode endpointEntry(JsonNode body, String endpointId) {
+        for (JsonNode endpoint : body.get("meta").get("federation").get("endpoints")) {
+            if (endpointId.equals(endpoint.get("id").asText())) {
+                return endpoint;
+            }
+        }
+        throw new AssertionError("endpoint " + endpointId + " not in meta.federation.endpoints");
     }
 
     /** Stubs all three member CDRs so any that IS queried answers successfully. */
@@ -377,7 +415,7 @@ class LocalizationPolicyIT extends IntegrationTestBase {
 
     private static Map<String, String> statusByEndpoint(JsonNode body) {
         Map<String, String> statuses = new LinkedHashMap<>();
-        body.get("meta").get("endpoints").forEach(endpoint ->
+        body.get("meta").get("federation").get("endpoints").forEach(endpoint ->
                 statuses.put(endpoint.get("id").asText(), endpoint.get("status").asText()));
         return statuses;
     }

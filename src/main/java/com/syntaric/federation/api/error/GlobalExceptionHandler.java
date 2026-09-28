@@ -11,6 +11,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -53,8 +54,28 @@ public class GlobalExceptionHandler {
             ex.details().forEach(problem::setProperty);
             return ResponseEntity.status(status).body(problem);
         }
+        // ex.meta() is non-null only for a fan-out that failed under §11.4's
+        // default; the envelope rides along so the 504/424 stays diagnosable.
         return ResponseEntity.status(status)
-                .body(OpenEhrErrorBody.of(ex.code(), ex.getMessage(), ex.details()));
+                .body(OpenEhrErrorBody.of(ex.code(), ex.getMessage(), ex.details(), ex.meta()));
+    }
+
+    /**
+     * A body in a media type the route does not take — a stored-query
+     * definition sent as XML, say. {@code 415}, with the same body shape as every
+     * other {@code /v1} error, rather than the catch-all's {@code 500}.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<Object> handleUnsupportedMediaType(final HttpMediaTypeNotSupportedException ex,
+                                                             final HttpServletRequest request) {
+        final HttpStatus status = HttpStatus.UNSUPPORTED_MEDIA_TYPE;
+        if (!isAdmin(request)) {
+            return ResponseEntity.status(status)
+                    .body(new OpenEhrErrorBody("UNSUPPORTED_MEDIA_TYPE", ex.getMessage(), null));
+        }
+        return ResponseEntity.status(status).body(problem(status,
+                "The request body's media type is not supported for this endpoint.",
+                TYPE_PREFIX + "unsupported-media-type", "Unsupported media type"));
     }
 
     /**

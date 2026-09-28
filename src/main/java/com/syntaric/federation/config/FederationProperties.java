@@ -18,7 +18,24 @@ public record FederationProperties(
         @DefaultValue Identity identity,
         @DefaultValue Localization localization,
         @DefaultValue Security security,
-        @DefaultValue Registry registry) {
+        @DefaultValue Registry registry,
+        @DefaultValue Completeness completeness) {
+
+    /**
+     * §11.4 / N37. All-or-nothing is the default and is not configurable: a
+     * gateway declaring best-effort as its default is declaring non-conformance.
+     * What a deployment chooses is whether the opt-in best-effort mode exists.
+     */
+    public record Completeness(
+            /**
+             * Whether {@code openEHR-federation-completeness: partial} is
+             * honoured. {@code true} (the default) returns the rows that arrived
+             * with {@code complete: false}; {@code false} rejects the header with
+             * 400, because a gateway that does not offer the mode MUST NOT
+             * silently ignore a request for it. Declared in {@code OPTIONS}.
+             */
+            @DefaultValue("true") boolean offerBestEffort) {
+    }
 
     /**
      * How the federation registry is populated at startup.
@@ -85,7 +102,18 @@ public record FederationProperties(
             @DefaultValue Map<String, Map<String, String>> staticMappings,
             /** HMAC-SHA256 key for hashing patient refs at rest; never store raw values. */
             @DefaultValue("change-me-in-deployment") String refHashSecret,
-            @DefaultValue("24h") Duration bindingTtl) {
+            @DefaultValue("24h") Duration bindingTtl,
+            /**
+             * The issuing namespace assumed for a patient identifier the client
+             * presents without one (§5.2). A client that names it — as
+             * {@code external_ref/namespace} beside the canonical predicate, or
+             * as {@code identifiers/issuer} beside an ENTRY-level subject
+             * (§5.4.3) — overrides this per query. Set it to the federation's
+             * patient identifier domain: it is what the cross-reference service
+             * is asked to resolve from ({@code sourceIdentifier=<namespace>|<id>}
+             * under PIXm) and it keys the hash in {@code resolution_binding}.
+             */
+            @DefaultValue("facade") String defaultNamespace) {
 
         public enum Mode { STATIC, PIXM }
     }

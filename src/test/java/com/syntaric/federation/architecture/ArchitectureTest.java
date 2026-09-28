@@ -62,6 +62,21 @@ class ArchitectureTest {
                     .should().dependOnClassesThat()
                     .resideInAnyPackage(ROOT + "query..", ROOT + "outbound..", ROOT + "identity..");
 
+    /**
+     * The stored-query registry (§12.7) is a leaf like {@code registry}: it holds
+     * AQL <em>text</em> and knows nothing about parsing, dispatching or
+     * resolving it. That is what lets the controller validate on the way in and
+     * the engine expand on the way out without the registry sitting in the
+     * middle of either — and what keeps a definition from ever being executed
+     * by a path that skipped the hygiene gate.
+     */
+    @ArchTest
+    static final ArchRule definitionStaysALeaf =
+            noClasses().that().resideInAPackage(ROOT + "definition..")
+                    .should().dependOnClassesThat()
+                    .resideInAnyPackage(ROOT + "query..", ROOT + "outbound..", ROOT + "identity..",
+                            ROOT + "registry..", "org.ehrbase..");
+
     /** The AQL pipeline never talks to the database or HTTP clients directly. */
     @ArchTest
     static final ArchRule aqlPipelineIsPure =

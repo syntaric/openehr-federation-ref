@@ -307,9 +307,10 @@ class IdentityResolutionPipelineLocalizationTest {
                         "test-gateway", "0.1.0", null),
                 new FederationProperties.Timeouts(Duration.ofSeconds(10), Duration.ofSeconds(15), Duration.ofSeconds(2)),
                 new FederationProperties.Identity(FederationProperties.Identity.Mode.STATIC, Map.of(),
-                        "test-secret", Duration.ofHours(24)),
+                        "test-secret", Duration.ofHours(24), "facade"),
                 localization,
                 new FederationProperties.Security("passthrough", Map.of(), null),
+                null,
                 null);
     }
 

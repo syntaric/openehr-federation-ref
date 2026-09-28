@@ -15,13 +15,18 @@ public record FederationRequestContext(
         String dedupMode,
         Duration preferWait) {
 
-    public enum Completeness { BEST_EFFORT, ALL }
+    /**
+     * §11.4 completion strategy. {@link #ALL} — all-or-nothing — is the default
+     * and needs no header; {@link #PARTIAL} is the opt-in best-effort mode a
+     * client selects with {@code openEHR-federation-completeness: partial}.
+     */
+    public enum Completeness { ALL, PARTIAL }
 
     public static final String REQUEST_ATTRIBUTE = FederationRequestContext.class.getName();
 
     public static FederationRequestContext empty() {
         return new FederationRequestContext(new LinkedHashSet<>(), new LinkedHashSet<>(),
-                Completeness.BEST_EFFORT, FederationHeaders.DEDUP_NONE, null);
+                Completeness.ALL, FederationHeaders.DEDUP_NONE, null);
     }
 
     public boolean hasHeaderTargets() {

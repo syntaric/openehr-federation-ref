@@ -10,20 +10,21 @@ All under `com.syntaric.federation`:
 
 | Package | Responsibility |
 |---|---|
-| `api` | HTTP surface: `/v1/query/aql`, `/v1/ehr/**`, `OPTIONS {base}/`, error rendering |
+| `api` | HTTP surface: `/v1/query/**`, `/v1/ehr/**`, `/v1/definition/**`, `OPTIONS {base}/`, error rendering |
 | `query` | The federation engine — see below |
-| `query.aql` | Parse, analyse, rewrite and merge AQL |
+| `query.aql` | Parse, bind parameters, analyse, rewrite and merge AQL |
 | `query.fanout` | Parallel dispatch and the timeout budget |
 | `query.routing` | Follow-up routing: which node owns this `ehr_id` or version UID |
 | `identity` | Resolving a subject to per-node `ehr_id`s, and the localization SPI |
 | `registry` | Members: organisations, nodes, endpoints, identifiers |
+| `definition` | The stored-query registry: named, immutably versioned AQL text (§12.7) |
 | `outbound` | HTTP clients to member nodes, and outbound auth profiles |
 | `security` | Outbound credential encryption and its boot-time validation |
 | `config` | Properties and startup wiring |
 
 ## Enforced boundaries
 
-Five rules in `ArchitectureTest` hold the shape. They exist because each one
+Six rules in `ArchitectureTest` hold the shape. They exist because each one
 guards a mistake that reads as a reasonable simplification at the point someone
 makes it.
 
@@ -32,6 +33,7 @@ makes it.
 | `identitySpiDependsOnNothingInternal` | The SPI reaching into internals, so it stays extractable |
 | `nothingDependsOnControllers` | Depending back on the HTTP layer |
 | `registryStaysALeaf` | `registry` reaching into query, outbound or identity |
+| `definitionStaysALeaf` | The stored-query registry reaching into the engine, or into the AQL SDK at all |
 | `aqlPipelineIsPure` | The AQL pipeline touching the database or HTTP |
 | `fanOutReachesNoPersistence` | Any persistence at all on the fan-out path |
 
@@ -53,17 +55,21 @@ per node per query. It was exception-wrapped, so it satisfied "never fail", and
 nothing noticed it violated "never delay".
 
 Nothing on this path records anything. Per-node latency and status leave with
-the response in `meta.endpoints` (N40) and are not persisted; request tracking
-and telemetry are deployment concerns the specification does not define, and a
-fork that wants them adds them where it wants the cost.
+the response in `meta.federation.endpoints` (N40) and are not persisted;
+request tracking and telemetry are deployment concerns the specification does
+not define, and a fork that wants them adds them where it wants the cost.
 
 ## Request flow
 
-### Federated AQL — `POST /v1/query/aql`
+### Federated AQL — `POST /v1/query/aql`, `/v1/query/{name}`
 
-1. **Parse and analyse.** Reject what cannot be answered correctly across a
-   federation rather than answering it wrongly: `OFFSET > 0` (N39, §11.6.2),
-   aggregates that are not decomposable, a subject predicate under `OR`.
+1. **Parse, bind, analyse.** ITS-REST `query_parameters` are bound into the
+   parsed AST — every `$name` becomes a typed primitive the SDK renderer
+   escapes, so nothing is ever spliced into text — *before* subject analysis,
+   so a `$patient_id` on the subject path is seen as the subject it is. Then
+   reject what cannot be answered correctly across a federation rather than
+   answering it wrongly: `OFFSET > 0` (N39, §11.6.2), aggregates that are not
+   decomposable, a subject predicate under `OR`.
 2. **Resolve targets.** Explicit endpoints or organisations from the
    `openEHR-federation-*` request headers, otherwise every active member.
 3. **Localize** (N4, §14). A regional record locator narrows the candidate set.
@@ -78,12 +84,40 @@ fork that wants them adds them where it wants the cost.
    dispatch if any survives. Rewriting is where a leak would be introduced;
    the gate is where it is caught.
 6. **Fan out** in parallel under the timeout budget.
-7. **Merge.** Reconcile columns across nodes, apply `ORDER BY` and `LIMIT`
+7. **Decide** (`CompletionPolicy`, §11.4). All-or-nothing is the default: an
+   in-scope node that did not answer fails the query with `504`, one that
+   answered with an error with `424`. Both carry `meta.federation` in the
+   error body — the envelope is built *before* the decision so a failure is
+   diagnosable. `not-resolved` and `consent-denied` clear `complete` but never
+   fail (§11.3). A client that opted into `partial` gets the rows that arrived.
+8. **Merge.** Reconcile columns across nodes, apply `ORDER BY` and `LIMIT`
    across the merged set, and attach provenance.
 
-The response is 200 with `meta.endpoints` — one entry per node, each with a
-status and a latency (N40). A partial federation is a partial *result*, not a
-failed request.
+The response is 200 with `meta.federation.endpoints` — one entry per node, each
+with a status and a latency (N40) — and `meta.federation.complete`. A partial
+federation is a failed request unless the client said it would take a partial
+*result*.
+
+### Stored queries — `/v1/definition/query/**`, `/v1/query/{name}`
+
+The gateway holds federated stored queries in its own registry (§12.7, N44)
+rather than routing them to one node as it does templates. A definition is
+`PUT` once under `{name}/{version}` — ITS-REST's own semver segment — and is
+immutable from then on: a second `PUT` to the same pair is `409`, and changing a
+definition means a new version, which is what makes a result reproducible.
+
+Invoking it by name expands the stored text into the pipeline above, exactly as
+if the client had sent it inline; the only difference is the ITS-REST `name`
+member in the envelope, which N44 requires so a client can see which definition
+answered. Definitions are **not** distributed to member nodes (declared in
+`OPTIONS` as `stored_query_fan_out: false`), so §12.7's drift hazard does not
+arise here.
+
+Two rules at the door. A definition names the patient through a `$parameter`,
+never a literal — the registry outlives the request, and N33 forbids the
+gateway to hold a patient identifier at rest — and the `definition` package
+holds AQL *text* only, with no dependency on the AQL SDK, so nothing in it can
+execute a query by a path that skipped the hygiene gate.
 
 ### Direct access — `/v1/ehr/**`
 
@@ -106,7 +140,20 @@ The specification is strict about what may cross a node boundary (N33, §14.4),
 and the gateway enforces it in two places:
 
 - **Rewriting** replaces the subject predicate before dispatch, so a member node
-  receives its own `ehr_id` and never the patient identifier.
+  receives its own `ehr_id` and never the patient identifier. The patient may be
+  named through either carrier §5.4.3 makes mandatory —
+  `e/ehr_status/subject/external_ref/id/value` or an `ENTRY`-level `subject`
+  `PARTY_IDENTIFIED`/`DV_IDENTIFIER` predicate such as
+  `o/subject/identifiers/id` — and both rewrite to the same node AQL. A
+  namespace predicate beside either (`external_ref/namespace`,
+  `identifiers/issuer`) is consumed as the identifier's issuing namespace and
+  stripped with it.
+- **The analysis guard** judges every other identifier-bearing path by its
+  *value*, not its shape: `c/composer/identifiers/id = '<clinician>'` is
+  ordinary query material and is dispatched, while the same path compared to
+  the patient identifier the query resolves on is refused
+  (`FED_IDENTIFIER_UNSTRIPPABLE`), as is any `ENTRY`-level `subject` path
+  resolution did not consume.
 - **The hygiene gate** re-checks the rewritten AQL and URL against a set of
   forbidden values and refuses dispatch (`FED_IDENTIFIER_HYGIENE`) rather than
   sending something it cannot vouch for.
@@ -158,13 +205,17 @@ it:
 operative deployment constraint.
 
 An `/admin/**` write surface would need the authorization story this build
-deliberately does not have, so the registry is deployment configuration applied
-from a document at startup. The specification's only defined introspection
-surface is the N30 self-description, and that is what this implements.
+deliberately does not have, so the member registry is deployment configuration
+applied from a document at startup. The specification's only defined
+introspection surface is the N30 self-description, and that is what this
+implements. The stored-query registry is the one write API the gateway does
+expose, because ITS-REST defines it and §12.7 federates it; it holds AQL text,
+never membership, and it is as open as every other route. The decisions this
+leaves to a deployment are written out in [security.md](security.md) (§13.4).
 
 ## Persistence
 
-One Flyway migration, `V1__federation.sql`:
+Two Flyway migrations, `V1__federation.sql` and `V2__stored_query.sql`:
 
 | Table | Holds |
 |---|---|
@@ -174,5 +225,6 @@ One Flyway migration, `V1__federation.sql`:
 | `ehr_node_index` | Which node owns which `ehr_id` |
 | `resolution_binding` | Cached subject resolutions, hashed |
 | `integrity_incident` | `ehr_id` collisions (N42) |
+| `stored_query` | Named, immutably versioned AQL definitions (§12.7) |
 
-No clinical content is stored in any of them.
+No clinical content and no patient identifier is stored in any of them.

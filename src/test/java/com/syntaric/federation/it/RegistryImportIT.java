@@ -309,7 +309,7 @@ class RegistryImportIT extends IntegrationTestBase {
     private RegistryBootstrapLoader loaderFor(org.springframework.core.io.Resource resource) {
         return new RegistryBootstrapLoader(registry,
                 new FederationProperties(null, null, null, null, null,
-                        new FederationProperties.Registry(resource)));
+                        new FederationProperties.Registry(resource), null));
     }
 
     private List<String> identifiersOf(String nodeId) {

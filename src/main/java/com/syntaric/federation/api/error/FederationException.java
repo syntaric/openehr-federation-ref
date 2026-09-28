@@ -27,4 +27,16 @@ public class FederationException extends RuntimeException {
     public Map<String, Object> details() {
         return details;
     }
+
+    /**
+     * The result-set {@code meta} a failing fan-out must still carry (§11.4), or
+     * null for every other failure.
+     *
+     * <p>Typed {@code Object} rather than the envelope's own record so this
+     * package never imports {@code query}: the error currency sits below the
+     * engine, and the subclass that knows the envelope lives up there.
+     */
+    public Object meta() {
+        return null;
+    }
 }

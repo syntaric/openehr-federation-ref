@@ -15,9 +15,14 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 
 /**
- * N43/CP-34: every {@code /v1/definition/…} request routes to one explicitly
- * chosen node — never an implicit pick, never a merged template catalogue.
- * Fan-out template upload is not offered in v1 (declared in OPTIONS).
+ * N43/CP-34: every {@code /v1/definition/template/…} request routes to one
+ * explicitly chosen node — never an implicit pick, never a merged template
+ * catalogue. Fan-out template upload is not offered in v1 (declared in OPTIONS).
+ *
+ * <p>The mapping is the template sub-area only. ITS-REST's definition area has
+ * two artefacts, templates and stored queries, and the second is held in this
+ * gateway's own registry (§12.7, {@link StoredQueryDefinitionController}) rather
+ * than routed. Nothing is lost by narrowing: there is no third sub-area.
  */
 @RestController
 public class DefinitionController {
@@ -30,7 +35,7 @@ public class DefinitionController {
         this.proxy = proxy;
     }
 
-    @RequestMapping("/v1/definition/**")
+    @RequestMapping({"/v1/definition/template", "/v1/definition/template/**"})
     public void route(final HttpServletRequest request, final HttpServletResponse response) throws IOException {
         final FederationRequestContext context = RequestContexts.federation(request);
         if (context.headerEndpointIds().size() != 1) {
@@ -42,6 +47,6 @@ public class DefinitionController {
         final EndpointDescriptor target = addressing.byEndpointId(endpointId)
                 .orElseThrow(() -> new FederationException(FedErrorCode.FED_UNKNOWN_TARGET,
                         "Endpoint '" + endpointId + "' is not a member of this federation"));
-        final ProxyService.ProxyResult result = proxy.forward(request, response, target, request.getRequestURI());
+        proxy.forward(request, response, target, request.getRequestURI());
     }
 }

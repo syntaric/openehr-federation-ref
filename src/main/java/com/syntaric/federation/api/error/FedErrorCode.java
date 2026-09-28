@@ -40,17 +40,51 @@ public enum FedErrorCode {
      * that fails at sweep time instead of at import time.
      */
     FED_REGISTRY_INVALID(HttpStatus.BAD_REQUEST),
+    /**
+     * A stored-query definition the registry will not hold: a malformed
+     * {@code [namespace::]name}, a version that is not strict semver, or the
+     * reserved name {@code aql} (§12.7, N44).
+     */
+    FED_STORED_QUERY_INVALID(HttpStatus.BAD_REQUEST),
+    /**
+     * A {@code $parameter} the query names is not supplied, one supplied is not
+     * named, or a value cannot be bound where it sits (a number after
+     * {@code LIKE}, a nested object). The details name the parameters, never the
+     * values — a value may be the patient identifier.
+     */
+    FED_QUERY_PARAMETER_INVALID(HttpStatus.BAD_REQUEST),
 
     /** Versioned write routed to a node that is not the controlling system. */
     FED_WRONG_CONTROLLING_SYSTEM(HttpStatus.CONFLICT),
     /** Same ehr_id claimed by two different nodes. */
     FED_EHR_ID_COLLISION(HttpStatus.CONFLICT),
+    /**
+     * A second {@code PUT} to a {@code {name}/{version}} the registry already
+     * holds. A stored version is immutable (§12.7, N44): changing a definition
+     * means a new version, never an overwrite.
+     */
+    FED_STORED_QUERY_EXISTS(HttpStatus.CONFLICT),
 
     /** Resource/route cannot be resolved to any node. */
     FED_NOT_FOUND(HttpStatus.NOT_FOUND),
 
-    /** all-or-nothing completeness requested and at least one node failed. */
+    /**
+     * Under the all-or-nothing default (§11.4) an in-scope node was asked and
+     * did not answer — {@code offline} without a response, or {@code time-out}.
+     * The body still carries {@code meta.federation.endpoints[]} so the client
+     * can see which node, and may re-issue with
+     * {@code openEHR-federation-completeness: partial} if a partial answer will do.
+     */
     FED_INCOMPLETE(HttpStatus.GATEWAY_TIMEOUT),
+
+    /**
+     * Under the all-or-nothing default (§11.4) an in-scope node answered the
+     * fan-out with an error of its own. {@code 424 Failed Dependency}: the node
+     * spoke, so this is not a timeout, and the node's status and message are in
+     * that endpoint's {@code error} entry. Wins over nothing — when the same
+     * fan-out also has an unanswered node, {@link #FED_INCOMPLETE} is reported.
+     */
+    FED_NODE_ERROR(HttpStatus.FAILED_DEPENDENCY),
 
     /** Feature defined by the spec but not offered by this deployment. */
     FED_NOT_IMPLEMENTED(HttpStatus.NOT_IMPLEMENTED),
@@ -64,8 +98,9 @@ public enum FedErrorCode {
      * an error of its own, and §11.2 is explicit that 500 is correct there
      * because "the error is the destination's, and {@code 502 Bad Gateway} would
      * attribute it to the intermediary". We honour that: a node's own status is
-     * streamed through untouched ({@code ProxyService}), and in fan-out a node
-     * error becomes a per-endpoint status rather than an HTTP status.
+     * streamed through untouched ({@code ProxyService}). In a fan-out the same
+     * case is a per-endpoint {@code error} entry and, under the all-or-nothing
+     * default, a {@link #FED_NODE_ERROR}.
      *
      * <p>This code covers the different case where there was no node response to
      * pass through. The failure genuinely is the intermediary's to report, and

@@ -6,7 +6,7 @@ authority, and this code exists to demonstrate it faithfully.
 
 ## Cite the specification
 
-Discussion here is grounded in *Proposal for Federation Tier with AQL* v0.3
+Discussion here is grounded in *Proposal for Federation Tier with AQL* v0.9
 (Antora component `federation-aql`, CC0). Please cite it precisely:
 
 - **§ number** for a section — "§13.2.1 says localization filters in front of

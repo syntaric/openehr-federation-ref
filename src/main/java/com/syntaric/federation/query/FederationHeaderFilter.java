@@ -3,6 +3,7 @@ package com.syntaric.federation.query;
 
 import com.syntaric.federation.api.error.FedErrorCode;
 import com.syntaric.federation.api.error.FederationException;
+import com.syntaric.federation.config.FederationProperties;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,6 +19,7 @@ import java.time.Duration;
 import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
+import java.util.Locale;
 import java.util.stream.Collectors;
 
 /**
@@ -30,6 +32,12 @@ import java.util.stream.Collectors;
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class FederationHeaderFilter extends OncePerRequestFilter {
+
+    private final FederationProperties properties;
+
+    public FederationHeaderFilter(final FederationProperties properties) {
+        this.properties = properties;
+    }
 
     @Override
     protected boolean shouldNotFilter(final HttpServletRequest request) {
@@ -62,30 +70,48 @@ public class FederationHeaderFilter extends OncePerRequestFilter {
         final LinkedHashSet<String> endpointIds = splitList(request, FederationHeaders.ENDPOINT);
         final LinkedHashSet<String> organisationIds = splitList(request, FederationHeaders.ORGANISATION);
 
-        FederationRequestContext.Completeness completeness = FederationRequestContext.Completeness.BEST_EFFORT;
-        final String completenessHeader = request.getHeader(FederationHeaders.COMPLETENESS);
-        if (completenessHeader != null) {
-            if (!FederationHeaders.COMPLETENESS_ALL.equalsIgnoreCase(completenessHeader.trim())) {
-                throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
-                        "Unsupported " + FederationHeaders.COMPLETENESS + " value; only 'all' is defined");
-            }
-            completeness = FederationRequestContext.Completeness.ALL;
-        }
+        final FederationRequestContext.Completeness completeness =
+                parseCompleteness(request.getHeader(FederationHeaders.COMPLETENESS));
 
-        String dedupMode = FederationHeaders.DEDUP_NONE;
         final String dedupHeader = request.getHeader(FederationHeaders.DEDUP);
-        if (dedupHeader != null) {
-            final String value = dedupHeader.trim().toLowerCase();
-            if (!FederationHeaders.DEDUP_NONE.equals(value)
-                    && !FederationHeaders.DEDUP_VERSION_IDENTITY.equals(value)) {
-                throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
-                        "Unsupported " + FederationHeaders.DEDUP + " mode '" + value + "'");
-            }
-            dedupMode = value;
+        final String dedupMode = dedupHeader == null
+                ? FederationHeaders.DEDUP_NONE
+                : dedupHeader.trim().toLowerCase(Locale.ROOT);
+        if (!FederationHeaders.DEDUP_NONE.equals(dedupMode)
+                && !FederationHeaders.DEDUP_VERSION_IDENTITY.equals(dedupMode)) {
+            throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
+                    "Unsupported " + FederationHeaders.DEDUP + " mode '" + dedupMode + "'");
         }
 
         return new FederationRequestContext(endpointIds, organisationIds, completeness, dedupMode,
                 parsePreferWait(request));
+    }
+
+    /**
+     * §11.4: {@code all} is the default and MUST be accepted explicitly;
+     * {@code partial} selects best-effort where the deployment offers it, and a
+     * gateway that does not offer it MUST reject the header rather than ignore
+     * it — silently answering all-or-nothing to a client that asked for partial
+     * would be a surprise in the safe direction, but still a surprise.
+     */
+    private FederationRequestContext.Completeness parseCompleteness(final String header) {
+        if (header == null) {
+            return FederationRequestContext.Completeness.ALL;
+        }
+        final String value = header.trim().toLowerCase(Locale.ROOT);
+        if (FederationHeaders.COMPLETENESS_ALL.equals(value)) {
+            return FederationRequestContext.Completeness.ALL;
+        }
+        if (FederationHeaders.COMPLETENESS_PARTIAL.equals(value)) {
+            if (!properties.completeness().offerBestEffort()) {
+                throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
+                        "Best-effort completeness is not offered by this federation; omit the "
+                                + FederationHeaders.COMPLETENESS + " header or send 'all'");
+            }
+            return FederationRequestContext.Completeness.PARTIAL;
+        }
+        throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
+                "Unsupported " + FederationHeaders.COMPLETENESS + " value; 'all' and 'partial' are defined");
     }
 
     private LinkedHashSet<String> splitList(final HttpServletRequest request, final String header) {
@@ -105,7 +131,7 @@ public class FederationHeaderFilter extends OncePerRequestFilter {
         while (prefers != null && prefers.hasMoreElements()) {
             for (final String token : prefers.nextElement().split("[,;]")) {
                 final String trimmed = token.trim();
-                if (trimmed.toLowerCase().startsWith("wait=")) {
+                if (trimmed.toLowerCase(Locale.ROOT).startsWith("wait=")) {
                     try {
                         final long seconds = Long.parseLong(trimmed.substring("wait=".length()).trim());
                         if (seconds <= 0) {

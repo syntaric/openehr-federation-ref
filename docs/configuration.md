@@ -38,19 +38,45 @@ buying before it asks.
 | `federation.timeouts.overall-budget` | `15s` | Ceiling for the whole fan-out |
 | `federation.timeouts.connect` | `2s` | TCP connect timeout per node |
 
-A node that misses its slice is reported `time-out` in `meta.endpoints` and the
-query still answers 200 with whatever else arrived. Exhausting the overall
-budget before enough nodes answer yields `FED_INCOMPLETE` (504).
+A node that misses its slice is reported `time-out` in
+`meta.federation.endpoints[]`. What happens to the query then depends on the
+completion strategy below: by default it fails with `FED_INCOMPLETE` (504), the
+envelope still in the error body; under an opted-in `partial` it answers 200
+with whatever else arrived and `complete: false`.
 
 Set `overall-budget` with the fan-out in mind: it is a wall-clock ceiling across
 nodes queried in parallel, not a sum, but localization (below) draws from the
 same request.
 
+## Completeness
+
+§11.4 fixes the default: **all-or-nothing**. An in-scope node that was asked
+and did not answer fails the query with `504`; one that answered with an error
+fails it with `424`. Neither is configurable, because a gateway declaring
+best-effort as its default is declaring non-conformance. Two in-scope statuses
+never fail a query: `not-resolved` and `consent-denied` are answers, not
+outages (§11.3).
+
+| Property | Default | Meaning |
+|---|---|---|
+| `federation.completeness.offer-best-effort` | `true` | Whether a client may opt into best-effort per request |
+
+With it on, a request carrying `openEHR-federation-completeness: partial` gets
+the rows that arrived, every other node reported in
+`meta.federation.endpoints[]`, `complete: false`, and a 200. With it off, that
+header is rejected with `400 FED_HEADER_INVALID` — the spec forbids silently
+ignoring it — and `OPTIONS {base}/` declares `completeness.best_effort: false`
+with no `opt_in` block. `all`, the default, is always accepted explicitly.
+
 ## Inbound authentication
 
 **There is none, and there is nothing to configure.** This gateway does not
-authenticate its callers. Every route it serves — `/v1/query/aql`, `/v1/ehr/**`,
-`OPTIONS {base}/` — answers whoever asks.
+authenticate its callers. Every route it serves — `/v1/query/**`, `/v1/ehr/**`,
+`/v1/definition/**` including the stored-query `PUT`, `OPTIONS {base}/` —
+answers whoever asks. The five authentication decisions §13.4 requires a
+deployment to record are answered for this build in
+[security.md](security.md), mostly by saying which of them the edge in front
+of this gateway makes.
 
 > **Anything that can reach this port can query the federation.** Do not expose
 > it directly. Put it behind whatever your deployment's access control policy
@@ -148,11 +174,22 @@ See [running.md](running.md) for the document format.
 | `federation.identity.static-mappings` | — | `<patientId>.<nodeId>` → `ehr_id`, for `mode: static` |
 | `federation.identity.ref-hash-secret` | `change-me-in-deployment` | Keys the hash written to `resolution_binding` |
 | `federation.identity.binding-ttl` | `24h` | How long a resolution may be reused |
+| `federation.identity.default-namespace` | `facade` | Issuing namespace assumed when the query names none (§5.2) |
 
 `resolution_binding` stores only an HMAC of the patient reference, never the raw
 identifier (N33). **Change `ref-hash-secret` in any real deployment** — the
 default is a placeholder, and a shared default would make the stored hashes
 comparable across deployments.
+
+A query may carry the identifier's issuing namespace itself — as
+`e/ehr_status/subject/external_ref/namespace = '…'` beside the canonical
+predicate, or as `…/subject/identifiers/issuer = '…'` (or `…/type`) beside an
+`ENTRY`-level `subject` predicate (§5.4.3). When it does, that value is used
+and the predicate is consumed with the identifier. `default-namespace` is what
+applies otherwise; **set it to the federation's patient identifier domain**
+(for example the OID of a national identifier), because it is what the
+cross-reference service is asked to resolve from — PIXm receives
+`sourceIdentifier=<namespace>|<id>` — and it keys the `resolution_binding` hash.
 
 ## Localization
 

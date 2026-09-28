@@ -47,12 +47,12 @@ BASE=http://localhost:8080
 # Federation self-description (N30) — no credentials needed, by design.
 curl -s -X OPTIONS $BASE/v1/ | jq
 
-# Federated AQL across both nodes. `meta.endpoints` carries one entry per node,
-# each with its own latency (N40).
+# Federated AQL across both nodes. `meta.federation.endpoints` carries one entry
+# per node, each with its own latency (N40).
 curl -s -X POST $BASE/v1/query/aql \
   -H 'Content-Type: application/json' \
   -d '{"q":"SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c"}' \
-  | jq '.meta.endpoints'
+  | jq '.meta.federation'
 
 # A subject-scoped query. The gateway rewrites the subject predicate into each
 # node's own ehr_id before dispatch — no node sees the patient identifier.
@@ -60,7 +60,28 @@ curl -s -X POST $BASE/v1/query/aql \
   -H 'Content-Type: application/json' \
   -d '{"q":"SELECT c/uid/value AS uid FROM EHR e CONTAINS COMPOSITION c
             WHERE e/ehr_status/subject/external_ref/id/value = '"'"'12345'"'"'"}' \
-  | jq '.rows, .meta.endpoints'
+  | jq '.rows, .meta.federation.endpoints'
+
+# Stop one node (docker compose stop ferroehr) and repeat: the default is
+# all-or-nothing (§11.4), so the answer is a 504 whose body still carries
+# meta.federation.endpoints[] saying which node did not answer. Add the
+# opt-in header to get the rows that did arrive, with complete: false.
+curl -s -X POST $BASE/v1/query/aql \
+  -H 'Content-Type: application/json' \
+  -H 'openEHR-federation-completeness: partial' \
+  -d '{"q":"SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c"}' \
+  | jq '.meta.federation.complete, .meta.federation.endpoints'
+
+# A stored query (§12.7): PUT the definition once — the patient through a
+# $parameter, never a literal — then invoke it by name with the value.
+curl -s -X PUT "$BASE/v1/definition/query/demo::compositions/1.0.0" \
+  -H 'Content-Type: text/plain' \
+  -d 'SELECT c/uid/value AS uid FROM EHR e CONTAINS COMPOSITION c
+      WHERE e/ehr_status/subject/external_ref/id/value = $patient_id' | jq
+curl -s -X POST "$BASE/v1/query/demo::compositions" \
+  -H 'Content-Type: application/json' \
+  -d '{"query_parameters":{"patient_id":"12345"}}' \
+  | jq '.name, .rows, .meta.federation.endpoints'
 
 # Take an ehr_id from those results and request it directly: follow-up routing
 # lands on the node that owns it (N22/N23/N36/N41).
@@ -129,9 +150,9 @@ Notes:
   queried; `excluded` is an operator's explicit decision to take a node out of
   fan-out without discarding its history. This is *membership and health* — the
   federation's standing configuration — and is a different vocabulary from the
-  per-query statuses in `meta.endpoints[]` (§7a.2, §11.1). `active` here does not
-  predict `active` there, and a per-query value such as `not-localized` is
-  meaningless in this field.
+  per-query statuses in `meta.federation.endpoints[]` (§7a.2, §11.1). `active`
+  here does not predict `active` there, and a per-query value such as
+  `not-localized` is meaningless in this field.
 - **Secrets are never in the document.** A client secret or signing key is
   supplied out of band and stored encrypted; re-applying a document that omits
   them keeps what is stored rather than clearing it.
@@ -148,7 +169,7 @@ mvn clean verify        # everything, including Testcontainers ITs (needs Docker
 mvn clean test          # unit tests only, no Docker
 mvn -B clean verify -DskipITs   # the fast loop
 
-# The conformance matrix prints a full CP-1..CP-37 report.
+# The conformance matrix prints a full CP-1..CP-40 report.
 mvn test -Dtest=ConformanceMatrixTest -Dsurefire.useFile=false
 ```
 

@@ -66,12 +66,15 @@ class EmptyRegistryIT {
 
         assertThat(body.path("rows").isArray()).isTrue();
         assertThat(body.path("rows")).isEmpty();
-        assertThat(body.path("meta").path("endpoints").isArray()).isTrue();
-        assertThat(body.path("meta").path("endpoints")).isEmpty();
+        JsonNode federation = body.path("meta").path("federation");
+        assertThat(federation.path("endpoints").isArray()).isTrue();
+        assertThat(federation.path("endpoints")).isEmpty();
+        // Nothing was in scope, so nothing is missing: complete, not vacuously false.
+        assertThat(federation.path("complete").asBoolean()).isTrue();
     }
 
     @Test
-    @DisplayName("completeness: all behaves the same way — nothing to be incomplete about")
+    @DisplayName("an explicit completeness: all behaves the same way — nothing to be incomplete about")
     void completenessAllOnAnEmptyFederationSucceeds() {
         JsonNode body = post("/v1/query/aql",
                 Map.of("openEHR-federation-completeness", "all"),
@@ -79,7 +82,8 @@ class EmptyRegistryIT {
                         + "WHERE e/ehr_status/subject/external_ref/id/value = '9999031234'"));
 
         assertThat(body.path("rows")).isEmpty();
-        assertThat(body.path("meta").path("endpoints")).isEmpty();
+        assertThat(body.path("meta").path("federation").path("endpoints")).isEmpty();
+        assertThat(body.path("meta").path("federation").path("complete").asBoolean()).isTrue();
     }
 
     @Test

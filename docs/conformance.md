@@ -74,11 +74,34 @@ documented stubs — see [adapters.md](adapters.md).
 | `CP-35` | Covered | Added in 0.3.1 (N17, N18) |
 | `CP-36` | Covered | Added in 0.3.1 (N8) |
 | `CP-37` | Covered | Added in 0.3.1 (N12) |
+| `CP-38` | Covered | Added in 0.9.0 (N33): both patient-identifier carriers resolve |
+| `CP-39` | Covered | SEC amendments (N25): the §13.4 authn decisions are documented in [security.md](security.md) |
+| `CP-40` | Covered | SEC amendments (N44): the optional stored-query registry is offered |
 
 CP-35, CP-36 and CP-37 were added in spec 0.3.1 after this implementation
 reported that five requirements — N8, N9, N12, N17 and N18 — reached no
 conformance point and so could not be scored by any implementation. N9 was added
-to CP-32 at the same time. All 45 requirements now trace to a conformance point.
+to CP-32 at the same time. All 46 requirements now trace to a conformance point.
+
+CP-38 was added in spec 0.9.0 when §5.4.3 made acceptance of *both*
+patient-identifier carriers mandatory — `EHR_STATUS.subject.external_ref` and an
+`ENTRY`-level `subject` `PARTY_IDENTIFIED`/`DV_IDENTIFIER` predicate — and stated
+that a clinician or facility predicate (`c/composer/identifiers/id = …`) must
+not be refused on its path. This gateway had accepted only the first carrier and
+refused every `identifiers` path; both are corrected, and the accepted set is
+not declared in `OPTIONS {base}/` because the spec makes it non-optional.
+
+CP-39 and CP-40 were added by the specification's SEC review amendments after
+0.9.0. CP-39 is an operator point — "verified as documentation at admission,
+not per request" — and this repository carries that documentation for the
+build in [security.md](security.md), answering each §13.4 obligation and
+saying which it delegates to the deployment; `SecurityDecisionsDocumentedTest`
+asserts the page answers all five. CP-40 scores the optional stored-query
+registry of §12.7, which this gateway offers: a definition `PUT` at the gateway
+is invocable by name, fans out with the `query_parameters` bound in, answers
+under its ITS-REST `name`, and is immutable per version. Definition fan-out to
+nodes is not offered, so its Track 9 clauses do not apply. A gateway declaring
+no registry is scored under CP-34 instead.
 
 All four deferrals are node-side, operator, or deployment obligations. None can
 be verified by a gateway test suite: a gateway cannot prove that a node honours
@@ -103,14 +126,18 @@ and are never renamed casually.
 | `FED_OFFSET_UNSUPPORTED` | 400 | `OFFSET > 0` — rejected rather than answered wrongly (N39, §11.6.2) |
 | `FED_QUERY_UNSUPPORTED` | 400 | The query shape is outside what the federation tier defines |
 | `FED_NO_TARGET` | 400 | Nothing to query after target resolution |
-| `FED_HEADER_INVALID` | 400 | A malformed `openEHR-federation-*` header |
+| `FED_HEADER_INVALID` | 400 | A malformed `openEHR-federation-*` header, or `completeness: partial` where best-effort is not offered |
 | `FED_REGISTRY_INVALID` | 400 | A registry value failed validation |
+| `FED_STORED_QUERY_INVALID` | 400 | A stored-query name or version the registry will not hold (§12.7) |
+| `FED_QUERY_PARAMETER_INVALID` | 400 | A `$parameter` unbound, unknown, or unbindable where it sits; parameters are named, values never echoed |
 | `FED_WRONG_CONTROLLING_SYSTEM` | 409 | A follow-up was directed at a node that does not own the resource |
 | `FED_EHR_ID_COLLISION` | 409 | One `ehr_id` claimed by two nodes — a federation integrity violation (N42) |
-| `FED_NOT_FOUND` | 404 | No such resource, or a dangling registry reference |
-| `FED_INCOMPLETE` | 504 | The overall budget expired before enough nodes answered |
+| `FED_STORED_QUERY_EXISTS` | 409 | A second `PUT` to a `{name}/{version}` already held; stored versions are immutable (§12.7) |
+| `FED_NOT_FOUND` | 404 | No such resource, stored query, or a dangling registry reference |
+| `FED_INCOMPLETE` | 504 | Under the all-or-nothing default, an in-scope node was asked and did not answer (`offline`, `time-out`); the body carries `meta.federation` |
+| `FED_NODE_ERROR` | 424 | Under the all-or-nothing default, an in-scope node answered with an error of its own; the body carries `meta.federation` with the node's message |
 | `FED_NOT_IMPLEMENTED` | 501 | A defined surface this build does not implement (e.g. `/v1/demographic`, N32) |
-| `FED_UPSTREAM_ERROR` | 502 | A member node failed in a way that is not attributable to the request |
+| `FED_UPSTREAM_ERROR` | 502 | A single-node route could not reach its node at all |
 
 ## Reading the result envelope
 
@@ -126,21 +153,50 @@ claim holds on the wire. In particular:
 - **`columns[]` entries carry `name` and `path` and nothing else.** ITS-REST
   defines no `type` member. `path` is always this gateway's own rendering of the
   client's AQL, never a node's (N17, CP-35).
-- **The federation's `meta` additions are never `_`-prefixed.** That prefix is
-  reserved to openEHR's own fields (`_href`, `_type`, `_created`, …); `complete`,
-  `endpoints`, `timeout` and `dedup` extend `meta` through the
-  `additionalProperties: true` ITS-REST declares on it.
+- **Everything the federation adds to `meta` sits under one unprefixed member,
+  `meta.federation`.** `complete`, `endpoints`, `timeout` and `dedup` live
+  inside it, extending `meta` through the `additionalProperties: true`
+  ITS-REST declares. Releases up to spec 0.9.0 carried them flat on `meta`;
+  the SEC amendments nested them, and the flat form is now a CP-35 failure.
+  The `_` prefix stays reserved to openEHR's own fields (`_href`, `_type`,
+  `_created`, …), so `_federation` would be as wrong as `_complete` was.
+- **`name` is emitted for a stored query** — ITS-REST's fifth member, carrying
+  the `[namespace::]name` of the gateway's own definition (§12.7, N44) — and
+  omitted for ad-hoc AQL.
 
 Both this envelope and the `OPTIONS` body are validated against the
 specification's published JSON Schemas in `SpecSchemaConformanceIT`; the schema
-copies live in `src/test/resources/spec-schemas/`.
+copies live in `src/test/resources/spec-schemas/` and were refreshed from the
+spec working tree on 2026-09-28.
 
-A federated query answers 200 with per-node provenance in `meta.endpoints`, even
-when some nodes did not contribute. That is the point: a partial federation is a
-partial *result*, not a failed request, and the caller is told exactly which
-nodes are behind the rows it received.
+**All-or-nothing is the default** (§11.4). A federated query answers 200 only
+when every in-scope node that was asked answered. A node that did not answer
+fails the query with `504 FED_INCOMPLETE`; a node that answered with an error
+fails it with `424 FED_NODE_ERROR`; when one fan-out has both, `504` is
+reported, since an unanswered node means *unknown* and a retry is the cheapest
+recovery. **The failing response still carries `meta.federation`** — every
+endpoint's status and error, `complete: false` — so the caller can see which
+node and why. A client that will take a partial answer says so with
+`openEHR-federation-completeness: partial` and gets the rows that arrived with
+`complete: false`; `all`, the default, is accepted explicitly.
 
-Each entry carries a `status`, from the closed set of §11.1:
+Which statuses fail the query, mirroring §11.1:
+
+| Status | In scope? | Clears `complete`? | Fails the query (default)? |
+|---|---|---|---|
+| `active` | yes | no | no |
+| `offline` (no response), `time-out` | yes | yes | yes, `504` |
+| `offline` with a node-reported error | yes | yes | yes, `424` |
+| `not-resolved` | yes | yes | **no** (§11.3 carve-out: "no `ehr_id` here" is an answer) |
+| `consent-denied` | yes | yes | **no** (§11.3: a refusal is a decision, not an outage) |
+| `excluded`, `not-localized` | no | no | no |
+
+So `200` with `complete: false` is a legitimate answer — it happens whenever
+`not-resolved` or `consent-denied` cleared the flag — and a client MUST read the
+flag rather than infer coverage from the status code.
+
+Each `meta.federation.endpoints[]` entry carries a `status`, from the closed
+set of §11.1:
 
 | Status | Meaning |
 |---|---|
@@ -150,10 +206,13 @@ Each entry carries a `status`, from the closed set of §11.1:
 | `not-resolved` | Not queried — the cross-reference service returned no local `ehr_id` for this patient at this node (§5, N6) |
 | `not-localized` | Not queried — localization did not name it as a candidate. **Nothing ruled it in, and nothing ruled it out**: a where-answer, never a consent decision (§11.1, §14) |
 | `excluded` | Not queried — ruled out *by a decision about this node*: a directive that did not name it, or an operator policy. Some authority acted |
-| `consent-denied` | A consent-aware localizer explicitly refused this node (N27a), or the node itself refused |
+| `consent-denied` | Not queried — a consent-aware localizer explicitly refused this node in the Step-1 pre-filter (N27a). **Never set from a node's own answer**: a node `403` after dispatch is a node error like any other, because the gateway cannot tell a consent refusal from a misconfigured authorization server and must not assert a decision it cannot see |
 
-There is no `error` status: a node that answered with a failure is reported
-`offline` or `time-out`, with the node's own message in the entry's `error` field.
+There is no `error` status: §11.1's closed vocabulary has no member for "asked,
+answered with a failure", so such a node is reported `offline` with the node's
+own status and message in the entry's `error` field — and, under the default,
+fails the query with `424` rather than `504`. This gap has been raised with the
+specification authors.
 
 `latency_ms` follows **dispatch**, not scope: it is present for `active`,
 `offline` and `time-out` — the three statuses describing an attempted request —
@@ -165,7 +224,7 @@ node that merely holds no records as `consent-denied` asserts a decision no
 consent authority ever made, and reporting it as `excluded` asserts that some
 authority ruled it out when none did.
 
-**`not-localized` and `excluded` do not clear `meta.complete`.** A node in either
+**`not-localized` and `excluded` do not clear `meta.federation.complete`.** A node in either
 state was never *in scope* — node selection never intended to ask it — so a query
 is not incomplete for having skipped it (§11.1 *What "in scope" means*, N37).
 This matters in the ordinary case: a nine-member federation whose localizer names

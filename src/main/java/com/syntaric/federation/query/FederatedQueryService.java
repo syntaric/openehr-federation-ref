@@ -13,6 +13,7 @@ import com.syntaric.federation.query.aql.directive.FederationDirectiveParser;
 import com.syntaric.federation.query.aql.directive.PreprocessedAql;
 import com.syntaric.federation.query.aql.merge.FederatedResultAssembler;
 import com.syntaric.federation.query.aql.merge.ResultEnvelope;
+import com.syntaric.federation.query.aql.parameters.QueryParameterBinder;
 import com.syntaric.federation.query.aql.rewrite.AqlRewriter;
 import com.syntaric.federation.query.aql.rewrite.NodeQuerySpec;
 import com.syntaric.federation.query.fanout.FanOutExecutor;
@@ -28,18 +29,22 @@ import org.ehrbase.openehr.sdk.aql.parser.AqlParseException;
 import org.ehrbase.openehr.sdk.aql.parser.AqlQueryParser;
 import org.springframework.stereotype.Service;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 
 /**
- * The full federated AQL pipeline (spec §7): directive strip → parse → subject
- * analysis → policies → resolution → rewrite → hygiene gate → fan-out → merge.
+ * The full federated AQL pipeline (spec §7): directive strip → parse → bind
+ * parameters → subject analysis → policies → resolution → rewrite → hygiene
+ * gate → fan-out → completion decision → merge.
+ *
+ * <p>The same pipeline serves an ad-hoc {@code POST /v1/query/aql} and a stored
+ * query invoked by name (§12.7): the registry supplies the text, the client the
+ * parameters, and from {@link #execute(QueryInvocation, FederationRequestContext, String)}
+ * onward nothing knows which it was — bar the {@code name} in the envelope.
  */
 @Service
 public class FederatedQueryService {
@@ -65,9 +70,15 @@ public class FederatedQueryService {
         this.properties = properties;
     }
 
+    /** Ad-hoc AQL without parameters. */
     public ResultEnvelope execute(final String facadeAql, final FederationRequestContext context,
                                   final String inboundAuthorization) {
-        final long startedAt = System.nanoTime();
+        return execute(QueryInvocation.adHoc(facadeAql, Map.of()), context, inboundAuthorization);
+    }
+
+    public ResultEnvelope execute(final QueryInvocation invocation, final FederationRequestContext context,
+                                  final String inboundAuthorization) {
+        final String facadeAql = invocation.q();
         if (facadeAql == null || facadeAql.isBlank()) {
             throw new FederationException(FedErrorCode.FED_AQL_INVALID, "Missing AQL query text (q)");
         }
@@ -81,13 +92,12 @@ public class FederatedQueryService {
         final Map<String, EndpointDescriptor> endpointInfo = new LinkedHashMap<>();
         targets.forEach(t -> endpointInfo.put(t.endpointId(), t));
 
-        AqlQuery query;
-        try {
-            query = AqlQueryParser.parse(pre.strippedAql());
-        } catch (final AqlParseException e) {
-            throw new FederationException(FedErrorCode.FED_AQL_INVALID,
-                    "AQL could not be parsed: " + e.getMessage());
-        }
+        final AqlQuery query = parse(pre.strippedAql());
+        // Bind BEFORE subject analysis: a `$patient_id` on the subject path is
+        // the subject predicate once its value is in, and must be rewritten to
+        // an ehr_id scope like any literal (§12.7 "under the ordinary rules of §7").
+        QueryParameterBinder.bind(query, invocation.parameters());
+        applyPaging(query, invocation);
 
         final SubjectAnalysis analysis = SubjectPredicateExtractor.analyse(query);
         AggregatePolicy.check(query, targets.size());
@@ -100,10 +110,19 @@ public class FederatedQueryService {
         final List<NodeOutcome> skipped = new ArrayList<>();
         final List<NodeQuerySpec> specs = new ArrayList<>();
         final String template = AqlRewriter.toDispatchTemplate(query, analysis);
+        // Backstop: a parameter in a position the binder does not walk would
+        // otherwise be dispatched as the literal text `$name` and fail at the
+        // node with a message the client cannot act on.
+        QueryParameterBinder.assertNoUnboundParameter(template);
 
         if (analysis.hasSubject()) {
             final String subjectId = analysis.subjectId();
-            final PatientToken token = new PatientToken(subjectId, "facade");
+            // §5.2 resolves "<patientId> with its issuing namespace": the one the
+            // client supplied beside the identifier, else the deployment's.
+            final String namespace = analysis.issuingNamespace() != null
+                    ? analysis.issuingNamespace()
+                    : properties.identity().defaultNamespace();
+            final PatientToken token = new PatientToken(subjectId, namespace);
             for (final NodeResolution resolution : identity.resolve(token, targets)) {
                 final EndpointDescriptor endpoint = endpointInfo.get(resolution.endpointId());
                 switch (resolution.status()) {
@@ -116,8 +135,8 @@ public class FederatedQueryService {
                     // `not-localized`. Never asked, and no decision was made
                     // about it — so not `excluded` (which records that some
                     // authority ruled it out) and not `consent-denied`. Being
-                    // out of scope, it does not clear meta.complete (§11.1
-                    // "What in scope means").
+                    // out of scope, it does not clear meta.federation.complete
+                    // (§11.1 "What in scope means").
                     case NOT_LOCALIZED -> skipped.add(NodeOutcome.skipped(resolution.endpointId(),
                             NodeOutcome.STATUS_NOT_LOCALIZED,
                             reasonOr(resolution, "not named by localization")));
@@ -148,33 +167,84 @@ public class FederatedQueryService {
                 .filter(o -> o != null)
                 .toList();
 
-        if (context.completeness() == FederationRequestContext.Completeness.ALL
-                && outcomes.stream().anyMatch(o -> !o.succeeded())) {
-            throw new FederationException(FedErrorCode.FED_INCOMPLETE,
-                    "All-or-nothing completeness requested and at least one node did not reach "
-                            + "status active");
-        }
-
-        final ResultEnvelope envelope = FederatedResultAssembler.assemble(new FederatedResultAssembler.Assembly(
+        final FederatedResultAssembler.Assembly assembly = new FederatedResultAssembler.Assembly(
                 facadeAql, query, outcomes, endpointInfo,
                 pre.projections(), analysis.subjectProjections(), analysis.subjectId(),
-                context.dedupMode(), budget, properties.timeouts().overallBudget().toMillis()));
+                context.dedupMode(), budget, properties.timeouts().overallBudget().toMillis(),
+                invocation.storedQueryName());
 
-        return envelope;
+        // §11.4: decide before assembling, so a failing fan-out never merges rows
+        // it will not return — and still carries the envelope that says why.
+        switch (CompletionPolicy.decide(outcomes, context.completeness())) {
+            case CompletionPolicy.Fail fail -> throw new IncompleteFederationException(
+                    fail.code(), failureMessage(fail), FederatedResultAssembler.failureMeta(assembly));
+            case CompletionPolicy.Succeed ignored -> {
+                // fall through to assemble
+            }
+        }
+        return FederatedResultAssembler.assemble(assembly);
     }
 
+    private static AqlQuery parse(final String aql) {
+        try {
+            return AqlQueryParser.parse(aql);
+        } catch (final AqlParseException e) {
+            throw new FederationException(FedErrorCode.FED_AQL_INVALID,
+                    "AQL could not be parsed: " + e.getMessage());
+        }
+    }
 
+    /**
+     * ITS-REST {@code fetch}/{@code offset} are the stored-query form of
+     * {@code LIMIT}/{@code OFFSET}. They are applied to the AST — not spliced
+     * into text — and only where the AQL carries neither, so that
+     * {@link LimitOffsetPolicy} governs the result exactly as it governs an
+     * inline clause. A definition that already pages and a request that pages
+     * again are two answers to one question, and are refused.
+     */
+    private static void applyPaging(final AqlQuery query, final QueryInvocation invocation) {
+        if (invocation.fetch() == null && invocation.offset() == null) {
+            return;
+        }
+        if (query.getLimit() != null || query.getOffset() != null) {
+            throw new FederationException(FedErrorCode.FED_QUERY_UNSUPPORTED,
+                    "fetch/offset cannot be combined with a query that already carries LIMIT/OFFSET");
+        }
+        if (invocation.fetch() != null) {
+            if (invocation.fetch() < 0) {
+                throw new FederationException(FedErrorCode.FED_QUERY_UNSUPPORTED, "fetch must not be negative");
+            }
+            query.setLimit(invocation.fetch());
+        }
+        if (invocation.offset() != null) {
+            if (invocation.offset() < 0) {
+                throw new FederationException(FedErrorCode.FED_QUERY_UNSUPPORTED, "offset must not be negative");
+            }
+            query.setOffset(invocation.offset());
+        }
+    }
+
+    private static String failureMessage(final CompletionPolicy.Fail fail) {
+        if (fail.code() == FedErrorCode.FED_INCOMPLETE) {
+            return "All-or-nothing completeness (the default) and the following in-scope nodes did not "
+                    + "answer: " + String.join(", ", fail.unanswered())
+                    + ". See meta.federation.endpoints[] for each node's status; re-issue with "
+                    + FederationHeaders.COMPLETENESS + ": " + FederationHeaders.COMPLETENESS_PARTIAL
+                    + " to accept the rows that did arrive.";
+        }
+        return "All-or-nothing completeness (the default) and the following in-scope nodes answered "
+                + "with an error: " + String.join(", ", fail.erroring())
+                + ". Each node's own status and message is in meta.federation.endpoints[].error; "
+                + "re-issue with " + FederationHeaders.COMPLETENESS + ": "
+                + FederationHeaders.COMPLETENESS_PARTIAL + " to accept the rows that did arrive.";
+    }
 
     private NodeQuerySpec buildSpec(final EndpointDescriptor endpoint, final String template, final String ehrId,
                                     final List<String> forbiddenValues) {
         final String nodeAql = AqlRewriter.forNode(template, ehrId);
         final String url = endpoint.url() + "/v1/query/aql";
-        try {
-            IdentifierHygieneGuard.assertClean("AQL", nodeAql, forbiddenValues);
-            IdentifierHygieneGuard.assertClean("URL", url, forbiddenValues);
-        } catch (final FederationException e) {
-            throw e;
-        }
+        IdentifierHygieneGuard.assertClean("AQL", nodeAql, forbiddenValues);
+        IdentifierHygieneGuard.assertClean("URL", url, forbiddenValues);
         return new NodeQuerySpec(endpoint.endpointId(), endpoint.nodeId(), endpoint.url(), ehrId, nodeAql);
     }
 

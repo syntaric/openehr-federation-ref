@@ -39,9 +39,10 @@ class RegistrySecretCipherTest {
                 new FederationProperties.Timeouts(Duration.ofSeconds(5), Duration.ofSeconds(10),
                         Duration.ofSeconds(2)),
                 new FederationProperties.Identity(FederationProperties.Identity.Mode.STATIC, Map.of(),
-                        "secret", Duration.ofHours(1)),
+                        "secret", Duration.ofHours(1), "facade"),
                 com.syntaric.federation.config.LocalizationProperties.disabled(),
                 new FederationProperties.Security("passthrough", Map.of(), key),
+                null,
                 null);
     }
 

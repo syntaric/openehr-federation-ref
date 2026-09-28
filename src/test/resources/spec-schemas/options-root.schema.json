@@ -48,16 +48,15 @@
         },
 
         "aql": {
-          "description": "§8, N35. Which AQL-level targeting mechanisms the gateway accepts. Targeting is carried in the AQL directive or the openEHR-federation-endpoint header, never as a query parameter (§8).",
+          "description": "§8. AQL-level federation behaviour. The accepted targeting mechanisms are deliberately absent: both the in-AQL directive and the openEHR-federation-endpoint header are mandatory at every conformant gateway (N35), so there is nothing to declare (§7a.2).",
           "type": "object",
           "additionalProperties": true,
-          "required": ["fan_out", "endpoint_directive", "endpoint_header"],
+          "required": ["fan_out"],
           "properties": {
-            "fan_out": { "type": "boolean" },
-            "endpoint_directive": { "type": "boolean" },
-            "endpoint_header": { "type": "boolean" }
+            "fan_out": { "type": "boolean" }
           }
         },
+
 
         "dedup": {
           "description": "§10, N15. The deduplication policy. Default MUST be 'none' (N15); a gateway offering version-identity dedup lists it in modes and names the request header that selects it.",
@@ -88,14 +87,22 @@
         },
 
         "completeness": {
-          "description": "§11.4, N37. Best-effort MUST be the default. A gateway offering the stricter all-or-nothing mode MUST declare it here and MUST make it opt-in per request.",
+          "description": "§11.4, N37. ALL-OR-NOTHING MUST be the default: a query in which an in-scope node was asked and did not answer fails (504/424) rather than returning partial rows. A gateway offering the opt-in BEST-EFFORT mode MUST declare it here and MUST say how a client selects it per request.\n\nThe polarity of this object was reversed by the SEC amendments: up to 0.9.0 `default` was \"best-effort\" and the declared, opt-in mode was named by `all_or_nothing`. It is now `best_effort` that is declared.",
           "type": "object",
           "additionalProperties": true,
-          "required": ["default", "all_or_nothing"],
+          "required": ["default", "best_effort"],
           "properties": {
-            "default": { "type": "string" },
-            "all_or_nothing": { "type": "boolean" },
+            "default": {
+              "description": "N37. The strategy in force when a request selects none. The only conformant value is \"all-or-nothing\"; the enum is closed here rather than left open because a gateway declaring \"best-effort\" as its default is declaring non-conformance, which a schema can catch and a reader might not.",
+              "type": "string",
+              "enum": ["all-or-nothing"]
+            },
+            "best_effort": {
+              "description": "N37. Whether the opt-in best-effort mode (partial rows, complete: false, HTTP 200) is offered at all. A gateway declaring false MUST reject `openEHR-federation-completeness: partial` rather than silently ignore it.",
+              "type": "boolean"
+            },
             "opt_in": {
+              "description": "N37/§11.4. How best-effort is selected per request. Required whenever best_effort is true - see the conditional below.",
               "type": "object",
               "additionalProperties": true,
               "properties": {
@@ -106,10 +113,10 @@
           },
           "allOf": [
             {
-              "$comment": "N37/§11.4: all-or-nothing MUST be opt-in per request, so a gateway offering it has to say how it is selected.",
+              "$comment": "N37/§11.4: best-effort MUST be selected per request, so a gateway offering it has to say how it is selected. This is the same conditional that used to guard `all_or_nothing`, inverted with the default.",
               "if": {
-                "properties": { "all_or_nothing": { "const": true } },
-                "required": ["all_or_nothing"]
+                "properties": { "best_effort": { "const": true } },
+                "required": ["best_effort"]
               },
               "then": { "required": ["opt_in"] }
             }
@@ -140,13 +147,38 @@
         },
 
         "definition": {
-          "description": "§12.6, N43. Whether fan-out template upload is offered. Definition management is single-node-routed in v1.",
+          "description": "§12.6/N43 and §12.7/N44. What the gateway does with the definition area. Templates are single-node-routed with optional fan-out upload; stored queries are either single-node-routed too, or held in a gateway registry.\n\nThe three booleans are independent: a gateway may hold stored queries without distributing them (registry true, fan_out false), distribute nothing at all, or fan out templates while routing stored queries to one node.",
           "type": "object",
           "additionalProperties": true,
           "required": ["fan_out_template_upload"],
+          "$comment": "Only fan_out_template_upload is required: it is the N43 behaviour every gateway has an answer to. stored_query_registry and stored_query_fan_out describe an OPTIONAL facility (N44), and a gateway that predates it or declines it omits them - absence means 'not offered'. Requiring them would make a conformant pre-registry OPTIONS body fail.",
           "properties": {
-            "fan_out_template_upload": { "type": "boolean" }
-          }
+            "fan_out_template_upload": {
+              "description": "§12.6, N43. Whether a single PUT of a template is applied to all member nodes.",
+              "type": "boolean"
+            },
+            "stored_query_registry": {
+              "description": "§12.7, N44. Whether the gateway offers a federated stored-query registry: it is authoritative for the definition, versions it immutably, and expands it into an ordinary fan-out when invoked by name. Absent or false means stored queries follow N43's single-node routing.",
+              "type": "boolean"
+            },
+            "stored_query_fan_out": {
+              "description": "§12.7, N44. Whether the gateway also distributes stored-query definitions to member nodes, on N43's template-upload terms (opt-in, per-node reported, non-atomic). Independent of stored_query_registry, though distributing a definition the gateway is not authoritative for is not a shape this specification describes - see the conditional below.",
+              "type": "boolean"
+            }
+          },
+          "allOf": [
+            {
+              "$comment": "§12.7/N44: fan-out of a stored-query DEFINITION is a facility of the registry - the registry is what holds the authoritative copy that gets distributed and that a node's copy can be checked against (§12.7 drift). Declaring fan_out without the registry describes distributing definitions with no authoritative source, which N44 does not specify and a client could not reason about.",
+              "if": {
+                "properties": { "stored_query_fan_out": { "const": true } },
+                "required": ["stored_query_fan_out"]
+              },
+              "then": {
+                "properties": { "stored_query_registry": { "const": true } },
+                "required": ["stored_query_registry"]
+              }
+            }
+          ]
         },
 
         "localization": {
@@ -198,7 +230,7 @@
 
     "memberEndpoint": {
       "title": "Member endpoint (OPTIONS)",
-      "description": "A member of the federation, as the gateway's standing configuration describes it. This is NOT a meta.endpoints[] entry: that describes what happened to one query, this describes the federation's standing configuration. See $defs/membershipStatus.",
+      "description": "A member of the federation, as the gateway's standing configuration describes it. This is NOT a meta.federation.endpoints[] entry: that describes what happened to one query, this describes the federation's standing configuration. See $defs/membershipStatus.",
       "type": "object",
       "additionalProperties": true,
       "required": ["id", "organisation", "status"],
@@ -241,7 +273,7 @@
         },
 
         "latency_ms_p50": {
-          "description": "An AGGREGATE over recent requests, not this-request measurement - contrast meta.endpoints[].latency_ms in §9.5, which is per-query. The statistic is named in the field so the two cannot be confused (§7a.2).",
+          "description": "An AGGREGATE over recent requests, not this-request measurement - contrast meta.federation.endpoints[].latency_ms in §9.5, which is per-query. The statistic is named in the field so the two cannot be confused (§7a.2).",
           "type": "integer",
           "minimum": 0
         },

@@ -5,11 +5,14 @@ import com.syntaric.federation.query.EndpointDescriptor;
 import com.syntaric.federation.query.aql.rewrite.NodeQuerySpec;
 import com.syntaric.federation.outbound.NodeClient;
 import com.syntaric.federation.outbound.NodeClientFactory;
+import com.syntaric.federation.outbound.NodeHttpErrorException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.ConnectException;
+import java.net.UnknownHostException;
 import java.net.http.HttpTimeoutException;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -96,9 +99,15 @@ public class FanOutExecutor {
                     response.rowsOrEmpty(), client.queryUrl()));
         } catch (final HttpTimeoutException e) {
             collector.offer(NodeOutcome.timeout(spec.endpointId(), elapsedMs(start), client.queryUrl()));
+        } catch (final NodeHttpErrorException e) {
+            // Order is load-bearing: this is an IOException, so the clause below
+            // would swallow it as "unreachable" and a node that answered 500
+            // would fail the query with 504 instead of §11.4's 424.
+            collector.offer(NodeOutcome.nodeError(spec.endpointId(), elapsedMs(start),
+                    e.status(), e.body(), client.queryUrl()));
         } catch (final IOException e) {
             collector.offer(NodeOutcome.offline(spec.endpointId(), elapsedMs(start),
-                    e.getMessage(), client.queryUrl()));
+                    describe(e), client.queryUrl()));
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             collector.offer(NodeOutcome.offline(spec.endpointId(), elapsedMs(start),
@@ -108,6 +117,25 @@ public class FanOutExecutor {
             collector.offer(NodeOutcome.offline(spec.endpointId(), elapsedMs(start),
                     "unexpected dispatch failure", client.queryUrl()));
         }
+    }
+
+    /**
+     * A message for the {@code error} field, which the published schema
+     * requires on every {@code offline} entry. The JDK client's
+     * {@link ConnectException} for a refused connection carries an <em>empty</em>
+     * message — found against a stopped demo node, not a WireMock stub — so the
+     * exception's own text is used only when it says something.
+     */
+    private static String describe(final IOException e) {
+        final String message = e.getMessage();
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        return switch (e) {
+            case ConnectException ignored -> "connection refused";
+            case UnknownHostException ignored -> "unknown host";
+            default -> "node unreachable (" + e.getClass().getSimpleName() + ")";
+        };
     }
 
     private static long elapsedMs(final long startNanos) {

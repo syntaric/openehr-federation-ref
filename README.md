@@ -20,7 +20,13 @@ conformance matrix mirrors spec §17 one-to-one and fails the build when coverag
 regresses.
 
 - **AQL fan-out** with subject→`ehr_id` rewriting, an identifier hygiene gate,
-  result merge, and `meta.endpoints` provenance per node (N40)
+  result merge, and `meta.federation.endpoints` provenance per node (N40).
+  All-or-nothing by default — a node that did not answer is a `504`, one that
+  answered with an error a `424`, both with the envelope in the error body —
+  and best-effort by opt-in (`openEHR-federation-completeness: partial`, N37)
+- **Stored-query registry** (§12.7, N44): `PUT` a definition once at the
+  gateway, invoke it by name, and it fans out like inline AQL with the
+  `query_parameters` bound in
 - **Byte-identical `/v1/ehr/**` proxy** with follow-up routing on `ehr_id` and
   `creating_system_id` (N22/N23/N36/N41), and integrity incidents on an `ehr_id`
   collision (N42)
@@ -46,10 +52,14 @@ Three consequences worth stating up front:
   behaviour, not who may invoke it, and authorization models differ by
   jurisdiction and deployment. **Anything that can reach this port can query the
   federation — put it behind your own access control.** The gateway is built to
-  sit there: it forwards `Authorization` to member nodes untouched.
-- **The registry has no write API.** It is applied from a document at startup.
-  An `/admin/**` surface would need its own authorization story, which is the
-  same decision as above.
+  sit there: it forwards `Authorization` to member nodes untouched. That
+  includes `PUT /v1/definition/query/**`: anyone who can reach the port can
+  store a named query, as with every other route. The §13.4 decisions this
+  leaves to a deployment are written out in [docs/security.md](docs/security.md).
+- **The member registry has no write API.** It is applied from a document at
+  startup. An `/admin/**` surface would need its own authorization story, which
+  is the same decision as above. (The stored-*query* registry is different: its
+  write API is ITS-REST's own, and holds AQL text, never membership.)
 - **There is no consent service, and none is required.** N27a is explicit that a
   deployment without one is fully conformant — consent is enforced at each
   member node under N27, which is where the specification puts that obligation.
@@ -62,9 +72,12 @@ Building this gateway is what the specification's 0.9.0 release candidate status
 rests on: every section of that normative body has been implemented here.
 
 The claim is machine-checked: `ConformanceMatrixTest` requires every point in
-CP-1..CP-37 to be covered by a tagged test or explicitly deferred with a reason.
+CP-1..CP-40 to be covered by a tagged test or explicitly deferred with a reason.
 All four deferrals are node-side, operator or deployment obligations that a
-gateway test suite cannot verify.
+gateway test suite cannot verify. CP-39 and CP-40 arrived with the
+specification's SEC amendments after 0.9.0, together with a breaking change to
+the result envelope (`meta.federation.*`) and the all-or-nothing default; this
+build tracks those amendments — see [CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 mvn test -Dtest=ConformanceMatrixTest -Dsurefire.useFile=false
@@ -92,7 +105,7 @@ curl -s -X OPTIONS $BASE/v1/ | jq
 curl -s -X POST $BASE/v1/query/aql \
   -H 'Content-Type: application/json' \
   -d '{"q":"SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c"}' \
-  | jq '.rows, .meta.endpoints'
+  | jq '.rows, .meta.federation.endpoints'
 ```
 
 > The demo stack ships a published encryption key and member CDRs with their own
