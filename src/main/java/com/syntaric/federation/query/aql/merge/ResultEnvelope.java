@@ -91,6 +91,12 @@ public record ResultEnvelope(
     public record FederationMeta(
             boolean complete,
             List<EndpointMeta> endpoints,
+            /**
+             * §9.5.1 / N45 (spec 1.1.0): index-aligned with {@code rows}; entry
+             * {@code i} lists the endpoint ids that contributed row {@code i}, in
+             * {@code endpoints} order. Always present, {@code []} with no rows.
+             */
+            @JsonProperty("row_endpoints") List<List<String>> rowEndpoints,
             Timeout timeout,
             Dedup dedup) {
     }

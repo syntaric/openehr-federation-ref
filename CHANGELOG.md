@@ -3,6 +3,28 @@
 Notable changes to this project. The version number tracks the specification
 version this implements — see [Versioning](CONTRIBUTING.md#versioning).
 
+## 1.1.0 (unreleased)
+
+Tracks the spec **v1.1.0** draft: per-row provenance without pinning the node
+set. `federation.spec_version` reports `"1.1"`, and the vendored schemas were
+re-copied from the spec 1.1.0 tree (`row_endpoints`, `federation-aql/1.1/`
+`$id`s).
+
+### Added
+
+- **`meta.federation.row_endpoints[]` on every AQL response** (§9.5.1, N45,
+  CP-42). One entry per row of `rows`, in order, each the array of endpoint ids
+  that contributed it — `["node_1"]` for an ordinary row, every contributor for
+  a row federation-level `DISTINCT` collapsed, the surviving copy's endpoint
+  after dedup. Computed after `ORDER BY` / `LIMIT`; `[]` on a failing
+  `504`/`424`. Rows are unchanged, so single-CDR clients see no difference.
+- **List-less `FROM ENDPOINT p CONTAINS …`** (§8.1, CP-41). Binds the alias for
+  `p/id`, `p/organisation`, `p/system_id`, `p/url` projections and names no
+  node set, so the query stays undirected: localization picks the nodes and
+  outsiders are `not-localized`. With the `openEHR-federation-endpoint` header
+  the header's set applies and nothing conflicts. A list-less form without an
+  alias, a list-less `ORGANISATION`, and `[ ]` are `400 FED_AQL_INVALID`.
+
 ## 1.0.1 (unreleased)
 
 Tracks spec **v1.0.1**, an erratum to 1.0.0. `federation.spec_version` stays

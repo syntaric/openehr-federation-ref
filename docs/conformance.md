@@ -1,6 +1,6 @@
 # Conformance
 
-This implementation targets *Proposal for Federation Tier with AQL* v1.0.1
+This implementation targets *Proposal for Federation Tier with AQL* v1.1.0
 (Antora component `federation-aql`), and claims conformance with respect to
 **§1–§18**, the normative body of that specification.
 
@@ -77,6 +77,8 @@ documented stubs — see [adapters.md](adapters.md).
 | `CP-38` | Covered | Added in 0.9.0 (N33): both patient-identifier carriers resolve |
 | `CP-39` | Covered | SEC amendments (N25): the §13.4 authn decisions are documented in [security.md](security.md) |
 | `CP-40` | Covered | SEC amendments (N44): the optional stored-query registry is offered |
+| `CP-41` | Covered | Added in 1.1.0 (N10, N11, N35): the list-less `FROM ENDPOINT` |
+| `CP-42` | Covered | Added in 1.1.0 (N45): per-row attribution in `meta.federation.row_endpoints[]` |
 
 CP-35, CP-36 and CP-37 were added in spec 0.3.1 after this implementation
 reported that five requirements — N8, N9, N12, N17 and N18 — reached no
@@ -90,6 +92,18 @@ that a clinician or facility predicate (`c/composer/identifiers/id = …`) must
 not be refused on its path. This gateway had accepted only the first carrier and
 refused every `identifiers` path; both are corrected, and the accepted set is
 not declared in `OPTIONS {base}/` because the spec makes it non-optional.
+
+CP-41 and CP-42 were added in spec 1.1.0. CP-41 is covered by
+`FederationDirectiveParserTest` (the grammar: list-less form binds the alias and
+names no node set, an alias is required without a list, `ORGANISATION` keeps its
+list mandatory, `[ ]` is refused) and `LocalizationPolicyIT` (the rows equal the
+undirected query's, outsiders are `not-localized`, the header's set applies
+without a conflict). The §12.7 refusal to fan out a directive-carrying
+definition needs no change here, because this gateway does not distribute
+definitions to nodes at all. CP-42 is covered in `FederatedQueryIT`: alignment
+after `ORDER BY` + `LIMIT`, a `DISTINCT` row from two nodes attributed to both,
+the surviving copy only after dedup, and `[]` on a failing `504`; every response
+is also validated against the vendored schema, which requires the member.
 
 CP-39 and CP-40 were added by the specification's SEC review amendments after
 0.9.0. CP-39 is an operator point — "verified as documentation at admission,

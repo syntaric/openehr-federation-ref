@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/1.0/_attachments/federated-result-set.schema.json",
+  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/1.1/_attachments/federated-result-set.schema.json",
   "title": "Federated openEHR AQL result set",
-  "description": "The response body of POST {base}/v1/query/aql at a federation gateway conforming to 'Proposal for Federation Tier with AQL' §9.\n\nThis is an openEHR ITS-REST RESULT_SET, not a federation-specific structure. The definitions under $defs/itsRest are a constrained restatement of the ITS-REST Release-1.1.0 Query API schemas (computable/OAS/query-validation.openapi.yaml: ResultSet, ResultSetMetadata, ResultSetColumn, ResultSetRow, QueryName, AQL), inlined rather than $ref'd by URL so that validation is self-contained and CI does not depend on a third-party site being reachable. ITS-REST governs those members; where this schema and ITS-REST could be read differently on an inherited member, ITS-REST governs (§9.1).\n\nWhat this specification adds, and what this schema is therefore normative for, is the single unprefixed `meta.federation` object and the four members inside it: complete, endpoints, timeout and dedup.",
+  "description": "The response body of POST {base}/v1/query/aql at a federation gateway conforming to 'Federation Tier with AQL' §9.\n\nThis is an openEHR ITS-REST RESULT_SET, not a federation-specific structure. The definitions under $defs/itsRest are a constrained restatement of the ITS-REST Release-1.1.0 Query API schemas (computable/OAS/query-validation.openapi.yaml: ResultSet, ResultSetMetadata, ResultSetColumn, ResultSetRow, QueryName, AQL), inlined rather than $ref'd by URL so that validation is self-contained and CI does not depend on a third-party site being reachable. ITS-REST governs those members; where this schema and ITS-REST could be read differently on an inherited member, ITS-REST governs (§9.1).\n\nWhat this specification adds, and what this schema is therefore normative for, is the single unprefixed `meta.federation` object and the five members inside it: complete, endpoints, row_endpoints, timeout and dedup.",
 
   "$comment": "Bound to openEHR ITS-REST Release-1.1.0 (19 July 2026). Spec §9.1 (result-set.adoc), N17, CP-35. Re-verify against the upstream OpenAPI before rebinding to a later release.",
 
@@ -87,7 +87,7 @@
       "$comment": "Open like `meta` itself: a deployment may carry additional federation-level diagnostics here (e.g. the §11.6.4 cursor handle, or the §14.1 localization error). Closing it would forbid the very extensions §11.6.4 and §14.1 ask for.",
       "additionalProperties": true,
 
-      "required": ["complete", "endpoints"],
+      "required": ["complete", "endpoints", "row_endpoints"],
 
       "properties": {
         "complete": {
@@ -99,6 +99,17 @@
           "description": "Federation addition (§9.5, §11.1, N16, N40). The per-node record of what happened, and the normative carrier for coverage information. Every in-scope node appears, whether or not it contributed rows, as do nodes reported 'excluded' or 'not-localized'.",
           "type": "array",
           "items": { "$ref": "#/$defs/endpointOutcome" }
+        },
+
+        "row_endpoints": {
+          "description": "Federation addition since 1.1.0 (§9.5.1, N45). Per-row attribution, index-aligned with `rows`: row_endpoints[i] lists the endpoint_ids that contributed rows[i]. Every entry is a non-empty array, [\"node_1\"] for a single-source row; a row merged by federation-level DISTINCT, GROUP BY or a decomposed aggregate lists every contributor once, in the order of `endpoints`. After dedup the entry names the surviving copy's endpoint. A response with no rows, including a failing 504/424, carries [].",
+          "$comment": "JSON Schema cannot assert that row_endpoints and rows have equal length, or that every value appears as an endpoints[].id. Both are prose obligations (§9.5.1), checked on the spec's own example by tools/check-schemas.sh.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
         },
 
         "timeout": {

@@ -42,14 +42,14 @@ class ConformanceOptionsIT extends IntegrationTestBase {
         assertThat(federation.get("timeout").get("per_node_ms").asLong()).isEqualTo(1500);
         assertThat(federation.get("timeout").get("overall_ms").asLong()).isEqualTo(2500);
         assertThat(federation.get("timeout").get("policy").asText()).isEqualTo("all-or-nothing");
-        // §7a.2: spec_version is major.minor — a 1.0.x gateway reports "1.0"
+        // §7a.2: spec_version is major.minor — a 1.1.x gateway reports "1.1"
         // and a client MUST NOT match on a patch component. It tracks minor
         // releases: 0.3 → 0.4 carried the ITS-REST row-shape correction,
-        // 0.4 → 0.9 carried no wire change at all, and 0.9 → 1.0 is the
-        // SEC-approved text. The SEC amendments had changed the wire contract
-        // under "0.9" without moving it; 1.0.0 paid that bump, so "1.0" is the
-        // first value that unambiguously means the amended contract.
-        assertThat(federation.get("spec_version").asText()).isEqualTo("1.0");
+        // 0.4 → 0.9 carried no wire change at all, 0.9 → 1.0 is the
+        // SEC-approved text, and 1.0 → 1.1 added row_endpoints[] and the
+        // list-less directive. The SEC amendments had changed the wire contract
+        // under "0.9" without moving it; 1.0.0 paid that bump.
+        assertThat(federation.get("spec_version").asText()).isEqualTo("1.1");
         assertThat(federation.get("spec_version").asText())
                 .as("major.minor only — a patch component here would break clients")
                 .matches("\\d+\\.\\d+");

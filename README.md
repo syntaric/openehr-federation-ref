@@ -3,7 +3,7 @@
 [![CI](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml/badge.svg)](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A working implementation of *Proposal for Federation Tier with AQL* v1.0.1 — one
+A working implementation of *Proposal for Federation Tier with AQL* v1.1.0 — one
 AQL endpoint in front of many openEHR CDRs.
 
 A client sends one query. The gateway works out which nodes could hold records
@@ -20,7 +20,10 @@ conformance matrix mirrors spec §17 one-to-one and fails the build when coverag
 regresses.
 
 - **AQL fan-out** with subject→`ehr_id` rewriting, an identifier hygiene gate,
-  result merge, and `meta.federation.endpoints` provenance per node (N40).
+  result merge, `meta.federation.endpoints` provenance per node (N40), and
+  per-row attribution in `meta.federation.row_endpoints` (N45). The
+  `FROM ENDPOINT` list is optional: `FROM ENDPOINT p CONTAINS …` projects
+  endpoint attributes while localization still picks the nodes.
   All-or-nothing by default — a node that did not answer is a `504`, one that
   answered with an error a `424`, both with the envelope in the error body —
   and best-effort by opt-in (`openEHR-federation-completeness: partial`, N37)
@@ -67,20 +70,22 @@ Three consequences worth stating up front:
 ## Specification conformance
 
 Conformant with respect to **§1–§18**, the normative body of *Proposal for
-Federation Tier with AQL* v1.0.1 (Antora component `federation-aql`, CC0),
-approved by the openEHR Specifications Editorial Committee (SEC) on 2026-10-12;
-1.0.1 is a routing erratum to that text.
+Federation Tier with AQL* v1.1.0 (Antora component `federation-aql`, CC0), a
+draft under SEC review that extends 1.0.0, which the openEHR Specifications
+Editorial Committee (SEC) approved on 2026-10-12; 1.0.1 was a routing erratum
+to that text.
 Building this gateway is what the specification's earlier 0.9.0 release-candidate
 status rested on: every section of that normative body has been implemented here.
 
 The claim is machine-checked: `ConformanceMatrixTest` requires every point in
-CP-1..CP-40 to be covered by a tagged test or explicitly deferred with a reason.
+CP-1..CP-42 to be covered by a tagged test or explicitly deferred with a reason.
 All four deferrals are node-side, operator or deployment obligations that a
 gateway test suite cannot verify. CP-39 and CP-40 arrived with the
 specification's SEC amendments after 0.9.0, together with a breaking change to
 the result envelope (`meta.federation.*`) and the all-or-nothing default; 1.0.0
 is that amended text, approved, 1.0.1 corrects its routing of EHR-scoped version
-requests, and this build tracks it — see
+requests, 1.1.0 adds per-row provenance (CP-41, CP-42), and this build tracks
+it — see
 [CHANGELOG.md](CHANGELOG.md).
 
 ```bash

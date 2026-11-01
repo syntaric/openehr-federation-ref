@@ -43,14 +43,16 @@ public class ConformanceController {
         final Map<String, Object> federation = new LinkedHashMap<>();
         federation.put("id", properties.federation().id());
         // §7a.2: major.minor only — patch releases are editorial and do not change
-        // the wire contract, so this stays "1.0" across 1.0.x. It tracks minor
+        // the wire contract, so this stays "1.1" across 1.1.x. It tracks minor
         // releases whether or not they change the contract: 0.3 → 0.4 did (rows
-        // became ITS-REST arrays), 0.4 → 0.9 did not, and 0.9 → 1.0 marks the
-        // SEC-approved text. "1.0" is the first value that unambiguously means
-        // the amended contract (meta.federation nesting, all-or-nothing default,
-        // node-error); "0.9" was emitted for both the pre- and post-amendment
-        // shapes. It reports only which release this gateway was built against.
-        federation.put("spec_version", "1.0");
+        // became ITS-REST arrays), 0.4 → 0.9 did not, 0.9 → 1.0 marks the
+        // SEC-approved text, and 1.0 → 1.1 added meta.federation.row_endpoints[]
+        // and the list-less FROM ENDPOINT. "1.0" was the first value that
+        // unambiguously meant the amended contract (meta.federation nesting,
+        // all-or-nothing default, node-error); "0.9" was emitted for both the
+        // pre- and post-amendment shapes. It reports only which release this
+        // gateway was built against.
+        federation.put("spec_version", "1.1");
         // §7a.2: the targeting mechanisms are deliberately NOT declared. Both the
         // FROM ENDPOINT directive and the openEHR-federation-endpoint header are
         // mandatory at every conformant gateway (N35), so the only conformant

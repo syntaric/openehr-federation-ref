@@ -373,6 +373,81 @@ class LocalizationPolicyIT extends IntegrationTestBase {
 
     // ---- helpers -------------------------------------------------------------
 
+    // ---- CP-41: the list-less directive labels rows, localization still selects
+
+    private static final String LISTLESS_QUERY =
+            "SELECT p/id AS endpoint_id, p/organisation AS org, "
+                    + "c/uid/value AS composition_id, c/context/start_time/value AS start_time "
+                    + "FROM ENDPOINT p CONTAINS EHR e CONTAINS COMPOSITION c "
+                    + "WHERE e/ehr_status/subject/external_ref/id/value = '" + PATIENT_ID + "'";
+
+    /**
+     * §8.1 (spec 1.1.0): {@code FROM ENDPOINT p} without a list binds the alias
+     * and nothing else. The node set is the localized one, outsiders are
+     * {@code not-localized} (no decision was made about them, so never
+     * {@code excluded}), {@code complete} stays true, and the rows are the
+     * undirected query's rows plus the label columns.
+     */
+    @Test
+    @Tag("CP-41")
+    @Tag("TRACK-3")
+    @DisplayName("list-less FROM ENDPOINT labels rows over exactly the localized nodes")
+    void listlessDirectiveLabelsRowsOverExactlyTheLocalizedNodes() {
+        localizes(Set.of("node_1", "node_3"));
+        stubAllNodesAnswering();
+        ResponseEntity<JsonNode> undirected = query();
+        bindings.deleteAll();
+        localizes(Set.of("node_1", "node_3"));
+        stubAllNodesAnswering();
+
+        ResponseEntity<JsonNode> response = exchangeJson(HttpMethod.POST, "/v1/query/aql",
+                Map.of("q", LISTLESS_QUERY), Map.of());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        JsonNode body = response.getBody();
+        assertThat(statusByEndpoint(body))
+                .containsEntry("node_1", "active")
+                .containsEntry("node_2", "not-localized")
+                .containsEntry("node_3", "active");
+        assertThat(body.get("meta").get("federation").get("complete").asBoolean()).isTrue();
+        assertNotQueried(NODE_2);
+
+        Set<String> undirectedUids = new java.util.HashSet<>();
+        undirected.getBody().get("rows").forEach(r -> undirectedUids.add(r.get(0).asText()));
+        Set<String> listlessUids = new java.util.HashSet<>();
+        for (int i = 0; i < body.get("rows").size(); i++) {
+            listlessUids.add(cell(body, i, "composition_id").asText());
+            String endpointId = cell(body, i, "endpoint_id").asText();
+            assertThat(endpointId).isIn("node_1", "node_3");
+            assertThat(cell(body, i, "org").asText()).isEqualTo(endpointId.equals("node_1") ? "Org A" : "Org B");
+            // the column and row_endpoints[] say the same thing
+            assertThat(body.get("meta").get("federation").get("row_endpoints").get(i).get(0).asText())
+                    .isEqualTo(endpointId);
+        }
+        assertThat(listlessUids).isEqualTo(undirectedUids);
+    }
+
+    /** §8.4.1: a list-less directive names no node set, so the header's applies and nothing conflicts. */
+    @Test
+    @Tag("CP-41")
+    @Tag("CP-28")
+    @DisplayName("list-less FROM ENDPOINT with the header uses the header's set, no conflict")
+    void listlessDirectiveWithTheHeaderUsesTheHeadersSet() {
+        localizes(Set.of("node_1", "node_2", "node_3"));
+        stubAllNodesAnswering();
+
+        ResponseEntity<JsonNode> response = exchangeJson(HttpMethod.POST, "/v1/query/aql",
+                Map.of("q", LISTLESS_QUERY), Map.of("openEHR-federation-endpoint", "node_2"));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        assertQueried(NODE_2);
+        assertNotQueried(NODE_1);
+        assertNotQueried(NODE_3);
+        JsonNode body = response.getBody();
+        assertThat(body.get("rows")).hasSize(1);
+        assertThat(cell(body, 0, "endpoint_id").asText()).isEqualTo("node_2");
+    }
+
     private static void localizes(Set<String> endpointIds) {
         NEXT_RESULT.set(LocalizationResult.localized(endpointIds, Map.of()));
     }

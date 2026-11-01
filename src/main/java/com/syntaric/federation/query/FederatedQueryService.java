@@ -255,7 +255,11 @@ public class FederatedQueryService {
                 : resolution.reason();
     }
 
-    /** N35/§8.4.1: directive vs header conflict handling and registry validation. */
+    /**
+     * N35/§8.4.1: directive vs header conflict handling and registry validation.
+     * Only a directive with a list names a node set; a list-less one never
+     * conflicts with the header, whose set then applies (§8.4.1, spec 1.1.0).
+     */
     private List<EndpointDescriptor> resolveTargets(final PreprocessedAql pre, final FederationRequestContext context) {
         final LinkedHashSet<String> directiveSet = expand(pre.endpointIds(), pre.organisationIds());
         final LinkedHashSet<String> headerSet = expand(context.headerEndpointIds(), context.headerOrganisationIds());

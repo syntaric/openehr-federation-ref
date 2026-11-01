@@ -8,6 +8,10 @@ import java.util.List;
  * Result of stripping the federation directive from a façade AQL text.
  * {@code strippedAql} is standard, node-conformant AQL (modulo the subject
  * predicate, which the rewrite stage handles).
+ *
+ * <p>{@code directivePresent} with empty id sets is the list-less
+ * {@code FROM ENDPOINT p} of spec 1.1.0: projections bound, no node set named,
+ * so node selection falls through to the header or to localization.
  */
 public record PreprocessedAql(
         String strippedAql,

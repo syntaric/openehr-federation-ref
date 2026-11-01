@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/1.0/_attachments/options-root.schema.json",
+  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/1.1/_attachments/options-root.schema.json",
   "title": "Federation gateway self-description (OPTIONS {base}/)",
-  "description": "The response body of OPTIONS {base}/ at a federation gateway conforming to 'Proposal for Federation Tier with AQL' §7a.2 / N30.\n\nUnlike the AQL result envelope, this structure has NO upstream standard: openEHR specifies no gateway self-description resource, so nothing here is inherited and every member is normative in that specification alone. That is precisely why it needs a schema more than the envelope does. It is versioned with the specification and carries no version marker of its own beyond federation.spec_version.",
+  "description": "The response body of OPTIONS {base}/ at a federation gateway conforming to 'Federation Tier with AQL' §7a.2 / N30.\n\nUnlike the AQL result envelope, this structure has NO upstream standard: openEHR specifies no gateway self-description resource, so nothing here is inherited and every member is normative in that specification alone. That is precisely why it needs a schema more than the envelope does. It is versioned with the specification and carries no version marker of its own beyond federation.spec_version.",
 
   "$comment": "Spec §7a.2 (rest-facade.adoc), N30, CP-23. Changing this schema and changing §7a.2 are the same change; see CONTRIBUTING.md.",
 

@@ -52,9 +52,9 @@ public final class FederatedResultAssembler {
      * loop as the success path so the two cannot drift.
      */
     public static ResultEnvelope.Meta failureMeta(final Assembly assembly) {
-        final ResultEnvelope.FederationMeta federation = buildFederationMeta(assembly, List.of());
+        final ResultEnvelope.FederationMeta federation = buildFederationMeta(assembly, List.of(), List.of());
         return new ResultEnvelope.Meta(new ResultEnvelope.FederationMeta(
-                false, federation.endpoints(), federation.timeout(), null));
+                false, federation.endpoints(), List.of(), federation.timeout(), null));
     }
 
     public static ResultEnvelope assemble(final Assembly assembly) {
@@ -91,10 +91,15 @@ public final class FederatedResultAssembler {
             suppressed = dedup.suppressed();
         }
 
-        // 2. tier-level DISTINCT (N13)
+        // 2. tier-level DISTINCT (N13). The surviving row keeps the first copy's
+        //    values and endpoint, and is attributed to every endpoint that
+        //    returned it (§9.5.1).
         if (assembly.query().getSelect().isDistinct()) {
-            final Set<Map<String, Object>> seen = new LinkedHashSet<>();
-            merged = merged.stream().filter(r -> seen.add(r.values())).toList();
+            final Map<Map<String, Object>, RowWithProvenance> seen = new LinkedHashMap<>();
+            for (final RowWithProvenance row : merged) {
+                seen.merge(row.values(), row, RowWithProvenance::mergedWith);
+            }
+            merged = List.copyOf(seen.values());
         }
 
         // 3. tier-level ORDER BY with deterministic ties (N39); nothing to sort
@@ -124,8 +129,25 @@ public final class FederatedResultAssembler {
                 .map(row -> toPositionalRow(projectRow(row, assembly, nodeColumns), columns))
                 .toList();
 
+        // §9.5.1: computed last, so it is aligned with the rows actually returned
+        // (after dedup, DISTINCT, ORDER BY and LIMIT), never with a node's own set.
+        final List<List<String>> rowEndpoints = merged.stream()
+                .map(row -> inEndpointOrder(row.contributors(), assembly.outcomes()))
+                .toList();
+
         return new ResultEnvelope(assembly.queryName(), assembly.facadeAql(), columns, rows,
-                new ResultEnvelope.Meta(buildFederationMeta(assembly, suppressed)));
+                new ResultEnvelope.Meta(buildFederationMeta(assembly, suppressed, rowEndpoints)));
+    }
+
+    /** Contributors re-ordered to match {@code meta.federation.endpoints[]} (§9.5.1). */
+    private static List<String> inEndpointOrder(final List<String> contributors, final List<NodeOutcome> outcomes) {
+        if (contributors.size() < 2) {
+            return contributors;
+        }
+        final List<String> order = outcomes.stream().map(NodeOutcome::endpointId).toList();
+        return contributors.stream()
+                .sorted(Comparator.comparingInt(order::indexOf))
+                .toList();
     }
 
     // ---- columns -------------------------------------------------------------
@@ -255,7 +277,8 @@ public final class FederatedResultAssembler {
     // ---- meta ----------------------------------------------------------------
 
     private static ResultEnvelope.FederationMeta buildFederationMeta(
-            final Assembly assembly, final List<ResultEnvelope.Dedup.Suppressed> suppressed) {
+            final Assembly assembly, final List<ResultEnvelope.Dedup.Suppressed> suppressed,
+            final List<List<String>> rowEndpoints) {
         final List<ResultEnvelope.EndpointMeta> endpointMetas = new ArrayList<>();
         // §11.1 "What in scope means" / N37: complete is true only when every
         // node that was IN SCOPE reached active. `excluded` and `not-localized`
@@ -293,6 +316,6 @@ public final class FederatedResultAssembler {
         final ResultEnvelope.Dedup dedup = "version-identity".equals(assembly.dedupMode())
                 ? ResultEnvelope.Dedup.of("version-identity", suppressed)
                 : null;
-        return new ResultEnvelope.FederationMeta(complete, endpointMetas, timeout, dedup);
+        return new ResultEnvelope.FederationMeta(complete, endpointMetas, rowEndpoints, timeout, dedup);
     }
 }

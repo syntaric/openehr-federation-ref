@@ -6,7 +6,7 @@ authority, and this code exists to demonstrate it faithfully.
 
 ## Cite the specification
 
-Discussion here is grounded in *Proposal for Federation Tier with AQL* v1.0
+Discussion here is grounded in *Proposal for Federation Tier with AQL* v1.1
 (Antora component `federation-aql`, CC0). Please cite it precisely:
 
 - **§ number** for a section — "§13.2.1 says localization filters in front of
@@ -84,8 +84,8 @@ property matters when that is not obvious.
 
 ## Versioning
 
-The version tracks the **specification** version, not a product release: `1.0.x`
-implements spec v1.0. A patch bump is an implementation change; the minor
+The version tracks the **specification** version, not a product release: `1.1.x`
+implements spec v1.1. A patch bump is an implementation change; the minor
 version moves when the specification does.
 
 When the specification's minor version moves, `federation.spec_version` in

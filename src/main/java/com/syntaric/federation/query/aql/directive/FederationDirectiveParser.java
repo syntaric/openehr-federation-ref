@@ -15,6 +15,13 @@ import java.util.List;
  * {@code p/organisation}, {@code p/url}; spec §8.3/§9.2). The remainder is
  * standard AQL a node parser will accept.
  *
+ * <p>Since spec 1.1.0 the {@code ENDPOINT} list is optional:
+ * {@code FROM ENDPOINT p CONTAINS …} binds the alias for projections and names
+ * no node set, so the query stays undirected and localization picks the nodes.
+ * A list-less form needs its alias (it would bind nothing otherwise), and
+ * {@code ORGANISATION} keeps its list mandatory. A present list must be
+ * non-empty.
+ *
  * <p>Fail-closed: any use of the directive alias outside the supported
  * projection forms is rejected with 400.
  */
@@ -36,28 +43,35 @@ public final class FederationDirectiveParser {
 
         String alias = null;
         if (cursor < tokens.size() && tokens.get(cursor).type() == AqlToken.Type.WORD
-                && !"[".equals(tokens.get(cursor).text())) {
+                && !tokens.get(cursor).isWord("CONTAINS")) {
             alias = tokens.get(cursor).text();
             cursor++;
         }
 
-        expectSymbol(tokens, cursor, "[");
-        cursor++;
         final LinkedHashSet<String> ids = new LinkedHashSet<>();
-        while (cursor < tokens.size() && tokens.get(cursor).type() == AqlToken.Type.STRING) {
-            ids.add(tokens.get(cursor).stringValue());
+        final boolean listPresent = cursor < tokens.size() && "[".equals(tokens.get(cursor).text());
+        if (listPresent) {
             cursor++;
-            if (cursor < tokens.size() && ",".equals(tokens.get(cursor).text())) {
+            while (cursor < tokens.size() && tokens.get(cursor).type() == AqlToken.Type.STRING) {
+                ids.add(tokens.get(cursor).stringValue());
                 cursor++;
-            } else {
-                break;
+                if (cursor < tokens.size() && ",".equals(tokens.get(cursor).text())) {
+                    cursor++;
+                } else {
+                    break;
+                }
             }
+            if (ids.isEmpty()) {
+                throw directiveError("directive endpoint list is empty");
+            }
+            expectSymbol(tokens, cursor, "]");
+            cursor++;
+        } else if (!endpointForm) {
+            // §8.1: list-less ORGANISATION selects nothing p/organisation does not project.
+            throw directiveError("ORGANISATION requires a list");
+        } else if (alias == null) {
+            throw directiveError("a FROM ENDPOINT without a list must bind an alias");
         }
-        if (ids.isEmpty()) {
-            throw directiveError("directive endpoint list is empty");
-        }
-        expectSymbol(tokens, cursor, "]");
-        cursor++;
 
         if (cursor >= tokens.size() || !tokens.get(cursor).isWord("CONTAINS")) {
             throw directiveError("directive must be followed by CONTAINS EHR …");

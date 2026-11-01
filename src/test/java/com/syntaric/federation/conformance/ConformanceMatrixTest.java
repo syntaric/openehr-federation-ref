@@ -20,11 +20,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Build-enforcing traceability matrix against the federation spec's three ID
- * schemes: conformance points (CP-1..CP-40 +CP-33a, §17), normative
- * requirements (N1..N44 +N27a +N42a, §6) and Connectathon tracks
- * (TRACK-1..11, §16.3). Tracked against spec 1.0.1: the 1.0.0 text approved on
+ * schemes: conformance points (CP-1..CP-42 +CP-33a, §17), normative
+ * requirements (N1..N45 +N27a +N42a, §6) and Connectathon tracks
+ * (TRACK-1..11, §16.3). Tracked against spec 1.1.0: the 1.0.0 text approved on
  * 2026-10-12 (the 0.9.x text plus the SEC amendments of 2026-09-28 that added
- * CP-39/CP-40 and N44) with the 1.0.1 routing erratum, which adds no ids.
+ * CP-39/CP-40 and N44), the 1.0.1 routing erratum, which added no ids, and
+ * 1.1.0's per-row provenance (CP-41/CP-42, N45).
  *
  * <p>Coverage is discovered by scanning every test class under
  * {@code com.syntaric.federation} for {@code @Tag}s — <em>not</em> from a hand-listed
@@ -107,7 +108,11 @@ class ConformanceMatrixTest {
             // decisions as documentation (docs/security.md); CP-40 scores the
             // optional stored-query registry of §12.7.
             Map.entry("CP-39", List.of("N25")),
-            Map.entry("CP-40", List.of("N44")));
+            Map.entry("CP-40", List.of("N44")),
+            // Added in spec 1.1.0: CP-41 scores the list-less FROM ENDPOINT
+            // (§8.1), CP-42 the per-row attribution in row_endpoints[] (§9.5.1).
+            Map.entry("CP-41", List.of("N10", "N11", "N35")),
+            Map.entry("CP-42", List.of("N45", "N17")));
 
     /**
      * Requirements no conformance point names, with the spec location that
@@ -298,8 +303,8 @@ class ConformanceMatrixTest {
     private Set<String> allConformancePoints() {
         Set<String> all = new LinkedHashSet<>();
         // CP-35..CP-37 added in spec 0.3.1; CP-38 in 0.9.0; CP-39..CP-40 by the
-        // SEC amendments after 0.9.0.
-        for (int i = 1; i <= 40; i++) {
+        // SEC amendments after 0.9.0; CP-41..CP-42 in 1.1.0.
+        for (int i = 1; i <= 42; i++) {
             all.add("CP-" + i);
             if (i == 33) {
                 all.add("CP-33a");
@@ -310,8 +315,9 @@ class ConformanceMatrixTest {
 
     private Set<String> allRequirements() {
         Set<String> all = new LinkedHashSet<>();
-        // N44 (the stored-query registry) added by the SEC amendments.
-        for (int i = 1; i <= 44; i++) {
+        // N44 (the stored-query registry) added by the SEC amendments; N45
+        // (row_endpoints[]) in 1.1.0.
+        for (int i = 1; i <= 45; i++) {
             all.add("N" + i);
             if (i == 27) {
                 all.add("N27a");

@@ -82,6 +82,7 @@ class FederatedQueryIT extends IntegrationTestBase {
     @Tag("CP-4")
     @Tag("CP-11")
     @Tag("CP-30")
+    @Tag("CP-42")
     void fanOutMergesRowsAndReportsEveryEndpoint() {
         stubQuery(NODE_1, "[" + row("aaaaaaaa-1111-0000-0000-000000000001::cdr1.test::1", "2026-01-01T10:00")
                 + "," + row("aaaaaaaa-1111-0000-0000-000000000002::cdr1.test::1", "2026-01-01T12:00") + "]", 0);
@@ -104,6 +105,78 @@ class FederatedQueryIT extends IntegrationTestBase {
         List<String> times = new ArrayList<>();
         body.get("rows").forEach(r -> times.add(cell(body, r, "start_time").asText()));
         assertThat(times).isSorted();
+        // §9.5.1: each row attributed to the node whose composition it is
+        assertRowEndpointsAligned(body);
+        for (int i = 0; i < body.get("rows").size(); i++) {
+            String system = cell(body, i, "composition_id").asText().split("::")[1];
+            assertThat(rowEndpoints(body).get(i))
+                    .containsExactly(system.replace("cdr", "node_").replace(".test", ""));
+        }
+    }
+
+    /**
+     * §9.5.1 / N45 invariants every success response must satisfy: one entry
+     * per row, each a non-empty array of ids that appear in endpoints[].
+     */
+    private static void assertRowEndpointsAligned(JsonNode body) {
+        JsonNode federation = body.get("meta").get("federation");
+        JsonNode rowEndpoints = federation.get("row_endpoints");
+        assertThat(rowEndpoints).as("row_endpoints is always present").isNotNull();
+        assertThat(rowEndpoints.size()).isEqualTo(body.get("rows").size());
+        List<String> ids = new ArrayList<>();
+        federation.get("endpoints").forEach(e -> ids.add(e.get("id").asText()));
+        rowEndpoints.forEach(entry -> {
+            assertThat(entry.isArray()).isTrue();
+            assertThat(entry.size()).isPositive();
+            entry.forEach(id -> assertThat(ids).contains(id.asText()));
+        });
+    }
+
+    private static List<List<String>> rowEndpoints(JsonNode body) {
+        List<List<String>> result = new ArrayList<>();
+        body.get("meta").get("federation").get("row_endpoints").forEach(entry -> {
+            List<String> ids = new ArrayList<>();
+            entry.forEach(id -> ids.add(id.asText()));
+            result.add(ids);
+        });
+        return result;
+    }
+
+    @Test
+    @Tag("CP-42")
+    void distinctRowReturnedByTwoNodesIsAttributedToBoth() {
+        String sharedUid = "eeeeeeee-0000-0000-0000-000000000001::cdr1.test::1";
+        stubQuery(NODE_1, "[" + row(sharedUid, "2026-01-01T10:00") + "]", 0);
+        stubQuery(NODE_2, "[" + row(sharedUid, "2026-01-01T10:00") + "]", 0);
+        stubQuery(NODE_3, "[" + row("cccccccc-3333-0000-0000-000000000001::cdr3.test::1", "2026-01-01T09:00") + "]", 0);
+
+        ResponseEntity<JsonNode> response = query(SUBJECT_QUERY.replace("SELECT ", "SELECT DISTINCT "), Map.of());
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        JsonNode body = response.getBody();
+        assertThat(body.get("rows")).hasSize(2);
+        assertRowEndpointsAligned(body);
+        // ORDER BY start_time: node_3's 09:00 row first, then the shared row, in endpoints[] order
+        assertThat(rowEndpoints(body)).containsExactly(List.of("node_3"), List.of("node_1", "node_2"));
+    }
+
+    @Test
+    @Tag("CP-41")
+    void emptyDirectiveListAndListlessOrganisationAreRejected() {
+        ResponseEntity<JsonNode> empty = query(
+                "SELECT c/uid/value FROM ENDPOINT p [ ] CONTAINS EHR e CONTAINS COMPOSITION c "
+                        + "WHERE e/ehr_status/subject/external_ref/id/value = '" + PATIENT_ID + "'",
+                Map.of());
+        assertThat(empty.getStatusCode().value()).isEqualTo(400);
+        assertThat(empty.getBody().get("error").asText()).isEqualTo("FED_AQL_INVALID");
+
+        ResponseEntity<JsonNode> listlessOrg = query(
+                "SELECT c/uid/value FROM ORGANISATION o CONTAINS EHR e CONTAINS COMPOSITION c "
+                        + "WHERE e/ehr_status/subject/external_ref/id/value = '" + PATIENT_ID + "'",
+                Map.of());
+        assertThat(listlessOrg.getStatusCode().value()).isEqualTo(400);
+        assertThat(listlessOrg.getBody().get("message").asText()).contains("ORGANISATION requires a list");
+        assertThat(NODE_1.getAllServeEvents()).isEmpty();
     }
 
     @Test
@@ -257,6 +330,7 @@ class FederatedQueryIT extends IntegrationTestBase {
     @Test
     @Tag("CP-30")
     @Tag("CP-12")
+    @Tag("CP-42")
     void slowNodeFailsTheQueryWith504ByDefault() {
         stubQuery(NODE_1, "[" + row("aaaaaaaa-1111-0000-0000-000000000001::cdr1.test::1", "2026-01-01T10:00") + "]", 0);
         stubQuery(NODE_2, "[]", 3000);
@@ -276,6 +350,9 @@ class FederatedQueryIT extends IntegrationTestBase {
         assertThat(endpointMeta(meta, "node_1").get("status").asText()).isEqualTo("active");
         assertThat(endpointMeta(meta, "node_2").get("status").asText()).isEqualTo("time-out");
         assertThat(meta.get("timeout").get("per_node_ms").asLong()).isEqualTo(1500);
+        // §9.5.1: no rows returned, so no rows attributed
+        assertThat(meta.get("row_endpoints").isArray()).isTrue();
+        assertThat(meta.get("row_endpoints")).isEmpty();
     }
 
     /**
@@ -462,6 +539,7 @@ class FederatedQueryIT extends IntegrationTestBase {
 
     @Test
     @Tag("CP-32")
+    @Tag("CP-42")
     void orderByWithLimitReturnsTheGlobalTopN() {
         stubQuery(NODE_1, "[" + row("aaaaaaaa-1111-0000-0000-000000000001::cdr1.test::1", "2026-01-01T10:00")
                 + "," + row("aaaaaaaa-1111-0000-0000-000000000002::cdr1.test::1", "2026-01-01T12:00") + "]", 0);
@@ -475,6 +553,9 @@ class FederatedQueryIT extends IntegrationTestBase {
         assertThat(body.get("rows")).hasSize(2);
         assertThat(cell(body, 0, "start_time").asText()).isEqualTo("2026-01-01T13:00");
         assertThat(cell(body, 1, "start_time").asText()).isEqualTo("2026-01-01T12:00");
+        // §9.5.1: aligned with the re-ordered, re-limited rows, not with a node's own set
+        assertRowEndpointsAligned(body);
+        assertThat(rowEndpoints(body)).containsExactly(List.of("node_2"), List.of("node_1"));
     }
 
     /**
@@ -595,6 +676,7 @@ class FederatedQueryIT extends IntegrationTestBase {
     @Test
     @Tag("CP-9")
     @Tag("CP-29")
+    @Tag("CP-42")
     void versionIdentityDedupKeepsOriginAndRecordsSuppression() {
         String sharedUid = "dddddddd-0000-0000-0000-000000000001::cdr1.test::1";
         stubQuery(NODE_1, "[" + row(sharedUid, "2026-01-01T10:00") + "]", 0);
@@ -605,6 +687,7 @@ class FederatedQueryIT extends IntegrationTestBase {
         ResponseEntity<JsonNode> plain = query(SUBJECT_QUERY, Map.of());
         assertThat(plain.getBody().get("rows")).hasSize(2);
         assertThat(plain.getBody().get("meta").get("federation").get("dedup")).isNull();
+        assertThat(rowEndpoints(plain.getBody())).containsExactlyInAnyOrder(List.of("node_1"), List.of("node_2"));
 
         // opt-in: originating copy kept, suppression visible
         stubQuery(NODE_1, "[" + row(sharedUid, "2026-01-01T10:00") + "]", 0);
@@ -613,6 +696,8 @@ class FederatedQueryIT extends IntegrationTestBase {
         ResponseEntity<JsonNode> deduped = query(SUBJECT_QUERY,
                 Map.of("openEHR-federation-dedup", "version-identity"));
         assertThat(deduped.getBody().get("rows")).hasSize(1);
+        // §9.5.1: the surviving copy's endpoint only; node_2 stays in dedup below
+        assertThat(rowEndpoints(deduped.getBody())).containsExactly(List.of("node_1"));
         JsonNode dedup = deduped.getBody().get("meta").get("federation").get("dedup");
         assertThat(dedup.get("mode").asText()).isEqualTo("version-identity");
         // the schema's members (§10.3) …

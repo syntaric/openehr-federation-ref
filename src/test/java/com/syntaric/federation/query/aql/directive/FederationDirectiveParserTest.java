@@ -72,6 +72,67 @@ class FederationDirectiveParserTest {
     }
 
     @Test
+    @Tag("CP-41")
+    void listlessEndpointDirectiveBindsTheAliasAndNamesNoNodes() {
+        PreprocessedAql pre = FederationDirectiveParser.parse(
+                "SELECT p/id AS endpoint_id, p/organisation AS org, c/uid/value FROM ENDPOINT p "
+                        + "CONTAINS EHR e CONTAINS COMPOSITION c");
+        assertThat(pre.directivePresent()).isTrue();
+        assertThat(pre.endpointIds()).isEmpty();
+        assertThat(pre.organisationIds()).isEmpty();
+        assertThat(pre.projections()).extracting(PreprocessedAql.EndpointProjection::columnName)
+                .containsExactly("endpoint_id", "org");
+        assertThat(pre.strippedAql())
+                .isEqualTo("SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c");
+    }
+
+    @Test
+    @Tag("CP-41")
+    void listlessDirectiveWithoutProjectionsStripsToTheUndirectedQuery() {
+        PreprocessedAql pre = FederationDirectiveParser.parse(
+                "SELECT c/uid/value FROM ENDPOINT p CONTAINS EHR e CONTAINS COMPOSITION c");
+        assertThat(pre.endpointIds()).isEmpty();
+        assertThat(pre.projections()).isEmpty();
+        assertThat(pre.strippedAql())
+                .isEqualTo("SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c");
+    }
+
+    @Test
+    @Tag("CP-41")
+    void listlessDirectiveWithoutAnAliasIsRejected() {
+        assertThatThrownBy(() -> FederationDirectiveParser.parse(
+                "SELECT c/uid/value FROM ENDPOINT CONTAINS EHR e CONTAINS COMPOSITION c"))
+                .isInstanceOfSatisfying(FederationException.class, e -> {
+                    assertThat(e.code()).isEqualTo(FedErrorCode.FED_AQL_INVALID);
+                    assertThat(e.getMessage()).contains("must bind an alias");
+                });
+    }
+
+    @Test
+    @Tag("CP-41")
+    void listlessOrganisationDirectiveIsRejected() {
+        assertThatThrownBy(() -> FederationDirectiveParser.parse(
+                "SELECT o/organisation, c/uid/value FROM ORGANISATION o CONTAINS EHR e "
+                        + "CONTAINS COMPOSITION c"))
+                .isInstanceOfSatisfying(FederationException.class, e -> {
+                    assertThat(e.code()).isEqualTo(FedErrorCode.FED_AQL_INVALID);
+                    assertThat(e.getMessage()).contains("ORGANISATION requires a list");
+                });
+    }
+
+    @Test
+    @Tag("CP-41")
+    void organisationDirectiveBindsAnAliasForProjections() {
+        PreprocessedAql pre = FederationDirectiveParser.parse(
+                "SELECT o/id AS endpoint_id, c/uid/value FROM ORGANISATION o [ \"org-a\" ] "
+                        + "CONTAINS EHR e CONTAINS COMPOSITION c");
+        assertThat(pre.organisationIds()).containsExactly("org-a");
+        assertThat(pre.projections()).hasSize(1);
+        assertThat(pre.strippedAql())
+                .isEqualTo("SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c");
+    }
+
+    @Test
     void projectionAliasesAreHonoured() {
         PreprocessedAql pre = FederationDirectiveParser.parse(
                 "SELECT p/organisation AS org_name, c/uid/value FROM ENDPOINT p [ \"n1\" ] "

@@ -175,7 +175,7 @@ mvn clean verify        # everything, including Testcontainers ITs (needs Docker
 mvn clean test          # unit tests only, no Docker
 mvn -B clean verify -DskipITs   # the fast loop
 
-# The conformance matrix prints a full CP-1..CP-40 report.
+# The conformance matrix prints a full CP-1..CP-42 report.
 mvn test -Dtest=ConformanceMatrixTest -Dsurefire.useFile=false
 ```
 
