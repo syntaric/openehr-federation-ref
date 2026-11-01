@@ -11,7 +11,7 @@ public sealed interface RoutingDecision {
     record SingleNode(EndpointDescriptor endpoint, String basis) implements RoutingDecision {
     }
 
-    /** Reads only (N41 step 4 / N22 fallback): probe every member. */
+    /** Reads only (N41 step 5): probe every member. */
     record AskAll(List<EndpointDescriptor> candidates) implements RoutingDecision {
     }
 }

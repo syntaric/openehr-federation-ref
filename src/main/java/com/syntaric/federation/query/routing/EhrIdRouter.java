@@ -17,10 +17,16 @@ import java.util.Map;
 import java.util.Optional;
 
 /**
- * N41 path-{@code ehr_id} routing, strict priority order: explicit target →
- * resolution binding → ehr_id index → (reads only) ask-all probe. For writes,
- * exhausting steps 1–3 yields 400, never a probe. A collision at any step is a
- * 409 + integrity incident (N42).
+ * N41 path-{@code ehr_id} routing for every {@code /v1/ehr/{ehr_id}/…} request,
+ * version reads and versioned writes included (spec 1.0.1), strict priority
+ * order: explicit target → resolution binding → ehr_id index → the node of the
+ * path uid's {@code creating_system_id} → (reads only) ask-all probe. Step 4
+ * applies only when the path carries an {@code OBJECT_VERSION_ID}, and never
+ * overrides an earlier step: the path {@code ehr_id} means nothing at a node
+ * other than the one that issued it. For writes, exhausting steps 1–4 yields
+ * 400, never a probe. A collision at any step is a 409 + integrity incident
+ * (N42). Whether a located write is admissible is {@link FollowUpRouter}'s
+ * control test, not a routing step.
  */
 @Component
 public class EhrIdRouter {
@@ -37,6 +43,11 @@ public class EhrIdRouter {
     }
 
     public RoutingDecision route(final String ehrId, final FederationRequestContext context, final boolean write) {
+        return route(ehrId, Optional.empty(), context, write);
+    }
+
+    public RoutingDecision route(final String ehrId, final Optional<VersionUidParser.VersionUid> versionUid,
+                                 final FederationRequestContext context, final boolean write) {
         // 1. explicit target on the request
         if (!context.headerEndpointIds().isEmpty()) {
             if (context.headerEndpointIds().size() > 1) {
@@ -76,7 +87,17 @@ public class EhrIdRouter {
             }
         }
 
-        // 4. ask-all probe — reads only
+        // 4. the node whose system_id is the path uid's creating_system_id
+        if (versionUid.isPresent()) {
+            final Optional<RoutingDecision> decision = registry
+                    .nodeForCreatingSystemId(versionUid.get().creatingSystemId())
+                    .flatMap(node -> decisionForNode(node.nodeId(), "creating_system_id"));
+            if (decision.isPresent()) {
+                return decision.get();
+            }
+        }
+
+        // 5. ask-all probe — reads only
         if (write) {
             throw new FederationException(FedErrorCode.FED_NO_TARGET,
                     "Cannot unambiguously route this write; name the target endpoint via "

@@ -1,6 +1,6 @@
 # Conformance
 
-This implementation targets *Proposal for Federation Tier with AQL* v1.0.0
+This implementation targets *Proposal for Federation Tier with AQL* v1.0.1
 (Antora component `federation-aql`), and claims conformance with respect to
 **§1–§18**, the normative body of that specification.
 
@@ -130,7 +130,7 @@ and are never renamed casually.
 | `FED_REGISTRY_INVALID` | 400 | A registry value failed validation |
 | `FED_STORED_QUERY_INVALID` | 400 | A stored-query name or version the registry will not hold (§12.7) |
 | `FED_QUERY_PARAMETER_INVALID` | 400 | A `$parameter` unbound, unknown, or unbindable where it sits; parameters are named, values never echoed |
-| `FED_WRONG_CONTROLLING_SYSTEM` | 409 | A follow-up was directed at a node that does not own the resource |
+| `FED_WRONG_CONTROLLING_SYSTEM` | 409 | A versioned write was located at a node that does not control the version (e.g. holds an imported copy) |
 | `FED_EHR_ID_COLLISION` | 409 | One `ehr_id` claimed by two nodes — a federation integrity violation (N42) |
 | `FED_STORED_QUERY_EXISTS` | 409 | A second `PUT` to a `{name}/{version}` already held; stored versions are immutable (§12.7) |
 | `FED_NOT_FOUND` | 404 | No such resource, stored query, or a dangling registry reference |

@@ -3,7 +3,31 @@
 Notable changes to this project. The version number tracks the specification
 version this implements — see [Versioning](CONTRIBUTING.md#versioning).
 
-## Unreleased
+## 1.0.1 (unreleased)
+
+Tracks spec **v1.0.1**, an erratum to 1.0.0. `federation.spec_version` stays
+`"1.0"`, because a patch release does not change the wire contract.
+
+### Fixed
+
+- **EHR-scoped version reads and writes are located by the path `ehr_id`**
+  (§12.5.1, N41). A request under `/v1/ehr/{ehr_id}/…` whose path carried an
+  `OBJECT_VERSION_ID` was routed by the uid's `creating_system_id`, ahead of
+  the explicit target, the resolution binding and the `ehr_id` index. For an
+  imported copy that sent the holder's `ehr_id` to the owner, where it yields a
+  `404` or, on an `ehr_id` collision, another patient's EHR. Spec 1.0.1 orders
+  the two rules: `creating_system_id` is now step 4 of the order, after the
+  index and before the ask-all probe, and is otherwise the write control test.
+  A read located at a copy holder returns the holder's copy, and
+  `openEHR-federation-system-id` naming the holder tells the client so. A write
+  located at a copy holder is rejected `409 FED_WRONG_CONTROLLING_SYSTEM` before
+  it is forwarded, and is never redirected to the owner (CP-14, CP-29, CP-33).
+- `system_id` mappings are learned only from write responses. A read can now
+  land on a copy holder, and learning from its `ETag` would have mapped a
+  foreign `creating_system_id` to the holder and let a later write to the copy
+  pass the control test.
+
+## 1.0.0 (unreleased)
 
 Tracks the specification from the SEC review amendments of 2026-09-28 up to
 its approval as **v1.0.0** by the openEHR Specifications Editorial Committee

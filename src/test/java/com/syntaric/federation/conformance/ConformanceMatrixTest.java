@@ -22,9 +22,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Build-enforcing traceability matrix against the federation spec's three ID
  * schemes: conformance points (CP-1..CP-40 +CP-33a, §17), normative
  * requirements (N1..N44 +N27a +N42a, §6) and Connectathon tracks
- * (TRACK-1..11, §16.3). Tracked against spec 1.0.0 (approved 2026-10-12), which
- * is the 0.9.x text plus the SEC amendments of 2026-09-28 that added CP-39/CP-40
- * and N44.
+ * (TRACK-1..11, §16.3). Tracked against spec 1.0.1: the 1.0.0 text approved on
+ * 2026-10-12 (the 0.9.x text plus the SEC amendments of 2026-09-28 that added
+ * CP-39/CP-40 and N44) with the 1.0.1 routing erratum, which adds no ids.
  *
  * <p>Coverage is discovered by scanning every test class under
  * {@code com.syntaric.federation} for {@code @Tag}s — <em>not</em> from a hand-listed

@@ -125,9 +125,14 @@ Proxied byte-identically to the owning node. Requests and responses are passed
 through unchanged, because a gateway that reformats a composition is no longer
 transparent and the client can no longer verify what the node actually said.
 
-Ownership is resolved by `query.routing`: from the `ehr_id` index, or from the
-`creating_system_id` embedded in a version UID. Observations are learned as they
-happen — a node answering for an `ehr_id` teaches the index that it owns it.
+The node is located by `query.routing` from the path `ehr_id` (spec §12.5.1):
+explicit target, resolution binding, `ehr_id` index, then — only when the path
+carries a version UID — the node of its `creating_system_id`, then an ask-all
+probe for reads. For a versioned write, `creating_system_id` is also the control
+test: a write located at a node that merely holds a copy is a `409`, never a
+redirect to the owner. Observations are learned as they happen — a node
+answering for an `ehr_id` teaches the index that it owns it, and a node's commit
+response teaches the `creating_system_id` it stamps.
 
 An `ehr_id` claimed by two nodes is a federation integrity violation: it raises
 an `integrity_incident` and answers `FED_EHR_ID_COLLISION` (N42). The incident

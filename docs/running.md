@@ -149,9 +149,9 @@ federation:
 
 Notes:
 
-- **`systemId`** is the node's `creating_system_id`. It is what follow-up
-  routing resolves against, so it must match what the CDR actually stamps into
-  the version UIDs it mints.
+- **`systemId`** is the node's `creating_system_id`. It is what the write
+  control test and the last routing step before ask-all resolve against, so it
+  must match what the CDR actually stamps into the version UIDs it mints.
 - **`status`** is `active`, `offline` or `excluded`. Only `active` endpoints are
   queried; `excluded` is an operator's explicit decision to take a node out of
   fan-out without discarding its history. This is *membership and health* — the

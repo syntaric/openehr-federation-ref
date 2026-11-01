@@ -32,9 +32,11 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Single-node routed {@code /v1/ehr/**} surface (§7a.1): resolve the owning
- * node (§12.5), stream the request through byte-identical (N22/N31), then
- * learn from what came back ({@code system_id} mappings, ehr index).
+ * Single-node routed {@code /v1/ehr/**} surface (§7a.1): locate the node from
+ * the path {@code ehr_id} (§12.5.1, also for version reads and writes), apply
+ * the write control test when the path carries a version uid (§12.4), stream
+ * the request through byte-identical (N22/N31), then learn from what came back
+ * ({@code system_id} mappings, ehr index).
  */
 @RestController
 public class EhrProxyController {
@@ -81,18 +83,19 @@ public class EhrProxyController {
                             + "(openEHR-federation-endpoint)");
         } else {
             final Optional<VersionUidParser.VersionUid> versionUid = VersionUidParser.findInPath(path);
-            final RoutingDecision decision = versionUid.isPresent()
-                    ? followUpRouter.route(versionUid.get(), context, write)
-                    : ehrIdRouter.route(ehrId, context, write);
+            final RoutingDecision decision = ehrIdRouter.route(ehrId, versionUid, context, write);
             target = switch (decision) {
                 case RoutingDecision.SingleNode single -> single.endpoint();
                 case RoutingDecision.AskAll askAll -> probe(ehrId, askAll.candidates(), request);
             };
+            if (write && versionUid.isPresent()) {
+                followUpRouter.assertControls(target, versionUid.get());
+            }
         }
 
         final String routedEhrId = ehrId;
         final ProxyService.ProxyResult result = proxy.forward(request, response, target, path,
-                r -> learn(target, routedEhrId, r));
+                r -> learn(target, routedEhrId, write, r));
     }
 
     private EndpointDescriptor explicitTargetOnly(final FederationRequestContext context, final String message) {
@@ -105,7 +108,7 @@ public class EhrProxyController {
                         "Endpoint '" + endpointId + "' is not a member of this federation"));
     }
 
-    /** N41 step 4 / N42: ask-all existence probe, reads only. */
+    /** N41 step 5 / N42: ask-all existence probe, reads only. */
     private EndpointDescriptor probe(final String ehrId, final List<EndpointDescriptor> candidates,
                                      final HttpServletRequest request) {
         final List<EndpointDescriptor> claimants = new ArrayList<>();
@@ -136,13 +139,23 @@ public class EhrProxyController {
         return owner;
     }
 
-    /** Learn-on-observe (N21): system_id mappings from returned uids, ehr index from routing. */
-    private void learn(final EndpointDescriptor target, final String ehrId, final ProxyService.ProxyResult result) {
+    /**
+     * Learn-on-observe (N21): ehr index from routing; system_id mappings from the
+     * uids a node returns on a write only. A commit's uid names the node that
+     * created it. A read's uid may name another system, because the located node
+     * can hold an imported copy (§12.3), and learning from it would map the owner's
+     * system to the holder and let a later write to the copy pass the control test.
+     */
+    private void learn(final EndpointDescriptor target, final String ehrId, final boolean write,
+                       final ProxyService.ProxyResult result) {
         if (result.status() < 200 || result.status() >= 300 || target.nodeId() == null) {
             return;
         }
         if (ehrId != null) {
             registry.observeEhrOnNode(ehrId, target.nodeId());
+        }
+        if (!write) {
+            return;
         }
         if (result.etag() != null) {
             VersionUidParser.parse(result.etag().replace("\"", ""))
