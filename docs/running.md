@@ -86,6 +86,12 @@ curl -s -X POST "$BASE/v1/query/demo::compositions" \
 # Take an ehr_id from those results and request it directly: follow-up routing
 # lands on the node that owns it (N22/N23/N36/N41).
 curl -s $BASE/v1/ehr/<ehr_id> | jq
+
+# Every /v1 response carries X-Request-ID — your own value if you send one,
+# otherwise the id the gateway assigned — for correlating a call with logs.
+curl -si -X POST $BASE/v1/query/aql -H 'X-Request-ID: my-call-1' \
+  -H 'Content-Type: application/json' \
+  -d '{"q":"SELECT c/uid/value FROM EHR e CONTAINS COMPOSITION c"}' | grep -i x-request-id
 ```
 
 Tear down with `docker compose down -v`.

@@ -3,7 +3,7 @@
 [![CI](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml/badge.svg)](https://github.com/syntaric/openehr-federation-ref/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-A working implementation of *Proposal for Federation Tier with AQL* v0.9.0 — one
+A working implementation of *Proposal for Federation Tier with AQL* v1.0.0 — one
 AQL endpoint in front of many openEHR CDRs.
 
 A client sends one query. The gateway works out which nodes could hold records
@@ -67,17 +67,19 @@ Three consequences worth stating up front:
 ## Specification conformance
 
 Conformant with respect to **§1–§18**, the normative body of *Proposal for
-Federation Tier with AQL* v0.9.0 (Antora component `federation-aql`, CC0).
-Building this gateway is what the specification's 0.9.0 release candidate status
-rests on: every section of that normative body has been implemented here.
+Federation Tier with AQL* v1.0.0 (Antora component `federation-aql`, CC0),
+approved by the openEHR Specifications Editorial Committee (SEC) on 2026-10-12.
+Building this gateway is what the specification's earlier 0.9.0 release-candidate
+status rested on: every section of that normative body has been implemented here.
 
 The claim is machine-checked: `ConformanceMatrixTest` requires every point in
 CP-1..CP-40 to be covered by a tagged test or explicitly deferred with a reason.
 All four deferrals are node-side, operator or deployment obligations that a
 gateway test suite cannot verify. CP-39 and CP-40 arrived with the
 specification's SEC amendments after 0.9.0, together with a breaking change to
-the result envelope (`meta.federation.*`) and the all-or-nothing default; this
-build tracks those amendments — see [CHANGELOG.md](CHANGELOG.md).
+the result envelope (`meta.federation.*`) and the all-or-nothing default; 1.0.0
+is that amended text, approved, and this build tracks it — see
+[CHANGELOG.md](CHANGELOG.md).
 
 ```bash
 mvn test -Dtest=ConformanceMatrixTest -Dsurefire.useFile=false

@@ -20,6 +20,8 @@ import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -28,10 +30,19 @@ import java.util.stream.Collectors;
  * values early with 400. Targeting offered as a query parameter
  * ({@code ?endpoint=}/{@code ?organisation=}) is not a supported mechanism
  * (N35) and is rejected outright.
+ *
+ * <p>Also assigns the request its identity (see {@link FederationRequestContext})
+ * and echoes the correlation id as {@code X-Request-ID} on every {@code /v1}
+ * response — before the chain runs, so a 400 from here or a 401 from the
+ * security filters carries it too.
  */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE + 10)
 public class FederationHeaderFilter extends OncePerRequestFilter {
+
+    public static final int MAX_CORRELATION_ID_LENGTH = 64;
+    private static final Pattern CORRELATION_ID =
+            Pattern.compile("[A-Za-z0-9._:-]{1," + MAX_CORRELATION_ID_LENGTH + "}");
 
     private final FederationProperties properties;
 
@@ -47,8 +58,14 @@ public class FederationHeaderFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(final HttpServletRequest request, final HttpServletResponse response,
                                     final FilterChain filterChain) throws ServletException, IOException {
+        // Decided and echoed before anything else can answer, so the header is on
+        // the response whether the request succeeds, fails validation below, or is
+        // refused by the security chain further down.
+        final UUID requestId = UUID.randomUUID();
+        final String correlationId = correlationId(request, requestId);
+        response.setHeader(FederationHeaders.REQUEST_ID, correlationId);
         try {
-            final FederationRequestContext context = parse(request);
+            final FederationRequestContext context = parse(request, requestId, correlationId);
             request.setAttribute(FederationRequestContext.REQUEST_ATTRIBUTE, context);
         } catch (final FederationException ex) {
             response.setStatus(ex.code().status().value());
@@ -60,7 +77,24 @@ public class FederationHeaderFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    private FederationRequestContext parse(final HttpServletRequest request) {
+    /**
+     * The client's {@code X-Request-ID} when it is one printable token of a
+     * sensible length; otherwise the gateway's own id. The constraint is what
+     * makes the value safe to echo as a header and to store and search as-is —
+     * an unusable value is ignored rather than rejected, because a correlation
+     * aid must never be a reason to refuse a clinical request.
+     */
+    private static String correlationId(final HttpServletRequest request, final UUID requestId) {
+        final String supplied = request.getHeader(FederationHeaders.REQUEST_ID);
+        if (supplied == null) {
+            return requestId.toString();
+        }
+        final String trimmed = supplied.trim();
+        return CORRELATION_ID.matcher(trimmed).matches() ? trimmed : requestId.toString();
+    }
+
+    private FederationRequestContext parse(final HttpServletRequest request, final UUID requestId,
+                                           final String correlationId) {
         if (request.getParameter("endpoint") != null || request.getParameter("organisation") != null) {
             throw new FederationException(FedErrorCode.FED_HEADER_INVALID,
                     "Endpoint targeting must use the " + FederationHeaders.ENDPOINT
@@ -84,7 +118,7 @@ public class FederationHeaderFilter extends OncePerRequestFilter {
         }
 
         return new FederationRequestContext(endpointIds, organisationIds, completeness, dedupMode,
-                parsePreferWait(request));
+                parsePreferWait(request), requestId, correlationId);
     }
 
     /**

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/0.3/_attachments/federated-result-set.schema.json",
+  "$id": "https://syntaric.github.io/openehr-federation-spec/federation-aql/1.0/_attachments/federated-result-set.schema.json",
   "title": "Federated openEHR AQL result set",
   "description": "The response body of POST {base}/v1/query/aql at a federation gateway conforming to 'Proposal for Federation Tier with AQL' §9.\n\nThis is an openEHR ITS-REST RESULT_SET, not a federation-specific structure. The definitions under $defs/itsRest are a constrained restatement of the ITS-REST Release-1.1.0 Query API schemas (computable/OAS/query-validation.openapi.yaml: ResultSet, ResultSetMetadata, ResultSetColumn, ResultSetRow, QueryName, AQL), inlined rather than $ref'd by URL so that validation is self-contained and CI does not depend on a third-party site being reachable. ITS-REST governs those members; where this schema and ITS-REST could be read differently on an inherited member, ITS-REST governs (§9.1).\n\nWhat this specification adds, and what this schema is therefore normative for, is the single unprefixed `meta.federation` object and the four members inside it: complete, endpoints, timeout and dedup.",
 
@@ -203,20 +203,20 @@
 
       "allOf": [
         {
-          "$comment": "N40: `error` is required when `status` denotes a failed interaction. 'excluded' and 'not-localized' are not failures - the node was never asked - and 'active' succeeded, so none of the three requires an error. 'consent-denied' is excluded from the requirement because it may be set by a gateway-side consent pre-filter (§13.2.1) where no node error exists.",
+          "$comment": "N40: `error` is required when `status` denotes a failed interaction. 'excluded' and 'not-localized' are not failures - the node was never asked - and 'active' succeeded, so none of the three requires an error. 'node-error' (§11.1) is the node's own failure and always has one to carry. 'consent-denied' is excluded from the requirement because it may be set by a gateway-side consent pre-filter (§13.2.1) where no node error exists.",
           "if": {
             "properties": {
-              "status": { "enum": ["offline", "time-out", "not-resolved"] }
+              "status": { "enum": ["offline", "time-out", "node-error", "not-resolved"] }
             },
             "required": ["status"]
           },
           "then": { "required": ["error"] }
         },
         {
-          "$comment": "N40: `latency_ms` is the gateway's own wall-clock measurement of ITS request to this endpoint, so it is required exactly when a request was actually dispatched — 'active' (answered), 'offline' (attempted, unreachable) and 'time-out' (attempted, abandoned; the elapsed time at abandonment per §11.5). It is NOT required for the statuses decided BEFORE dispatch: 'excluded' and 'not-localized' were never in scope (§11.1), and 'not-resolved' and a pre-filtered 'consent-denied' (§13.2.1) are settled during Step-1 identity resolution, before any node query exists to time. Requiring a number for those would force a gateway to invent one, which is the opposite of what N40 wants.",
+          "$comment": "N40: `latency_ms` is the gateway's own wall-clock measurement of ITS request to this endpoint, so it is required exactly when a request was actually dispatched — 'active' (answered), 'offline' (attempted, unreachable), 'time-out' (attempted, abandoned; the elapsed time at abandonment per §11.5) and 'node-error' (answered with a failure). It is NOT required for the statuses decided BEFORE dispatch: 'excluded' and 'not-localized' were never in scope (§11.1), and 'not-resolved' and a pre-filtered 'consent-denied' (§13.2.1) are settled during Step-1 identity resolution, before any node query exists to time. Requiring a number for those would force a gateway to invent one, which is the opposite of what N40 wants.",
           "if": {
             "properties": {
-              "status": { "enum": ["active", "offline", "time-out"] }
+              "status": { "enum": ["active", "offline", "time-out", "node-error"] }
             },
             "required": ["status"]
           },
@@ -227,12 +227,13 @@
 
     "endpointQueryStatus": {
       "title": "Per-query endpoint status (§11.1)",
-      "description": "The closed status set of §11.1 / N16. This is the one place 'not-localized' becomes mechanically checkable, which is what a conformance harness needs.",
+      "description": "The closed status set of §11.1 / N16. This is the one place 'not-localized' becomes mechanically checkable, which is what a conformance harness needs. 'node-error' is the node that was reached and answered with a failure (424 under the default strategy, §11.4); it is deliberately distinct from 'offline' (504) so the two recoveries stay distinguishable in the envelope.",
       "type": "string",
       "enum": [
         "active",
         "offline",
         "time-out",
+        "node-error",
         "not-resolved",
         "consent-denied",
         "excluded",

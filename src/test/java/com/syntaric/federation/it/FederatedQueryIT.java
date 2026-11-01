@@ -55,6 +55,29 @@ class FederatedQueryIT extends IntegrationTestBase {
     }
 
     @Test
+    void clientRequestIdIsEchoedAndAnUnusableOneIsReplaced() {
+        stubQuery(NODE_1, "[]", 0);
+        stubQuery(NODE_2, "[]", 0);
+        stubQuery(NODE_3, "[]", 0);
+
+        ResponseEntity<JsonNode> own = query(SUBJECT_QUERY, Map.of("X-Request-ID", "client-run-42"));
+        assertThat(own.getStatusCode().value()).isEqualTo(200);
+        assertThat(own.getHeaders().getFirst("X-Request-ID")).isEqualTo("client-run-42");
+
+        ResponseEntity<JsonNode> none = query(SUBJECT_QUERY, Map.of());
+        assertThat(none.getHeaders().getFirst("X-Request-ID"))
+                .as("the gateway assigns one when the client sends none")
+                .isNotBlank();
+
+        // Spaces and quotes are outside the accepted token shape: ignored, never a 400.
+        ResponseEntity<JsonNode> unusable = query(SUBJECT_QUERY, Map.of("X-Request-ID", "not a \"token\""));
+        assertThat(unusable.getStatusCode().value()).isEqualTo(200);
+        assertThat(unusable.getHeaders().getFirst("X-Request-ID"))
+                .isNotBlank()
+                .isNotEqualTo("not a \"token\"");
+    }
+
+    @Test
     @Tag("CP-1")
     @Tag("CP-4")
     @Tag("CP-11")

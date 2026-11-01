@@ -11,6 +11,11 @@ public final class FederationHeaders {
     /** Deployment-defined opt-in dedup selector; declared in OPTIONS. */
     public static final String DEDUP = "openEHR-federation-dedup";
     public static final String PREFER = "Prefer";
+    /**
+     * Client correlation id, echoed on every {@code /v1} response. Not part of
+     * the federation specification; the conventional header for the purpose.
+     */
+    public static final String REQUEST_ID = "X-Request-ID";
 
     /** The default, accepted explicitly so a client can state it (§11.4). */
     public static final String COMPLETENESS_ALL = "all";
